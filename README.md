@@ -36,8 +36,10 @@ you> I'm learning Python and I use VS Code.
      ^ watch the "· noted -> notes/..." line: it just wrote a file
 
 you> /quit
-$ uv run python main.py          # <- restart. this is the whole point
+$ brain                          # <- restart. this is the whole point
 you> what do you know about me?
+
+$ brain reflect                  # optional: what patterns does it see?
 ```
 
 If the second session answers from memory, the harness works. That is the
@@ -58,6 +60,7 @@ brain/
 ├── memory.py       SQLite log + notes/ vault + keyword search + dedupe.
 ├── librarian.py    second small call: "what here is worth remembering?"
 ├── consolidate.py  the "sleep" job: compresses notes into _digest.md.
+├── reflect.py      looks at your notes for patterns -> _reflection.md.
 ├── check.py        doctor. run it whenever something feels broken.
 ├── seed.py         starter notes.
 ├── notes/          YOUR BRAIN. open with any text editor.
@@ -143,21 +146,44 @@ me?" still works. Delete that fallback once you pass ~50 notes.
 
 ## 6. Commands
 
-```bash
-uv run python main.py              # chat (loads the last 20 turns)
-uv run python main.py --once "hi"  # one-shot, no loop
+`brain` is installed at `~/.local/bin/brain`, which is already on your PATH:
 
-uv run python check.py             # is everything alive?
-uv run python memory.py --stats    # how much do I remember?
-uv run python memory.py python     # search notes from the shell
-uv run python librarian.py "..."   # what would it remember from this?
-uv run python consolidate.py       # compress notes -> notes/_digest.md
-uv run python consolidate.py --dry-run
-uv run python seed.py              # add starter notes
-uv run python eval/run_eval.py     # score retrieval (fast, no model call)
+```bash
+brain                     # chat
+brain "what do you know about me?"   # one-shot, no loop
+brain check               # doctor
+brain notes               # how much do I remember?
+brain search python       # search notes from the shell
+brain sleep               # compress notes -> notes/_digest.md
+brain reflect             # find patterns -> notes/_reflection.md
+brain show                # print the reflection
+brain eval                # score retrieval
+brain seed                # add starter notes
+```
+
+The raw equivalents, if you'd rather see what's happening:
+
+```bash
+cd ~/dev/brain
+uv run python main.py [--once "..."]
+uv run python check.py
+uv run python memory.py --stats
+uv run python memory.py <query>
+uv run python librarian.py "..."     # what would it remember from this?
+uv run python consolidate.py [--dry-run]
+uv run python reflect.py [--show]
+uv run python eval/run_eval.py
 ```
 
 Inside the chat: `/notes`, `/stats`, `/quit`.
+
+### Generated files are walled off
+
+`notes/_digest.md` and `notes/_reflection.md` start with `_` and are
+**excluded from recall**. The digest is a compression of your facts, the
+reflection is the model guessing about your personality. Neither is allowed
+to masquerade as something you said. That separation is the whole reason
+`reflect.py` is safe to run.
 
 ---
 
@@ -184,9 +210,13 @@ and crawls, you went too big — that's a hardware limit, not a bug.
 in numpy, rank by cosine similarity. Same signature, so `eval/run_eval.py`
 tells you whether it actually helped. Add an eval question *first*.
 
-**d) Reflection.** `reflect.py`: "what patterns do you see in these notes?",
-written back as a note. Fun, and it shows where self-referential memory
-gets weird.
+**d) Let it sleep on its own.** Add a `launchd` job (macOS cron) that runs
+`brain sleep` and `brain reflect` at 3am. Then your brain consolidates while
+you're asleep, which is when the metaphor earns its keep:
+
+```bash
+# ~/Library/LaunchAgents/com.miro.brain.plist  ->  run brain sleep + brain reflect
+```
 
 **e) Fine-tuning.** Skip it. It teaches *style*, not *knowledge*, needs
 hundreds of clean examples, and goes stale immediately. Retrieval wins.

@@ -152,8 +152,8 @@ def recall(query: str, k: int = 5, budget: int = 3000) -> str:
 
     scored: list[tuple[float, Path, str]] = []
     for path in NOTES.glob("*.md"):
-        if path.name == DIGEST_NAME:
-            continue
+        if path.name.startswith("_"):
+            continue  # generated files are not facts
         body = path.read_text(encoding="utf-8", errors="ignore")
         found = wanted & _words(body)
         if not found:
@@ -168,9 +168,12 @@ def recall(query: str, k: int = 5, budget: int = 3000) -> str:
         # Nothing matched. With a small vault, show the newest notes so that
         # "what do you know about me?" still gets a real answer. This is a
         # deliberately crude fallback; delete it once you have >50 notes.
-        recent = sorted(NOTES.glob("*.md"), key=lambda p: -p.stat().st_mtime)[:3]
-        scored = [(0.0, p, p.read_text(encoding="utf-8", errors="ignore")) for p in recent]
-        scored = [row for row in scored if row[1].name != DIGEST_NAME]
+        recent = sorted(NOTES.glob("*.md"), key=lambda p: -p.stat().st_mtime)
+        scored = [
+            (0.0, p, p.read_text(encoding="utf-8", errors="ignore"))
+            for p in recent
+            if not p.name.startswith("_")
+        ][:3]
 
     chunks, used = [], 0
     for _, path, body in scored[:k]:
@@ -194,7 +197,9 @@ def digest(max_chars: int = 1200) -> str:
 
 
 def note_paths() -> list[Path]:
-    return sorted(NOTES.glob("*.md"))
+    """Real notes only. Files starting with '_' are generated (digest,
+    reflection) and must never be treated as things you wrote."""
+    return sorted(p for p in NOTES.glob("*.md") if not p.name.startswith("_"))
 
 
 # ---------------------------------------------------------------- cli
