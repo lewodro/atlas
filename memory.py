@@ -70,6 +70,42 @@ def _slug(text: str) -> str:
     return (s[:48] or "note").strip("-")
 
 
+_STOP = set(
+    "the a an is are was were user i my me we our you your it its of to in on at "
+    "for and or that this these those be been has have had do does did as with".split()
+)
+
+
+def _key(text: str) -> set[str]:
+    """Words that carry meaning, so 'I am learning Python' and
+    'The user is learning Python' look the same."""
+    return _words(text) - _STOP
+
+
+def keywords(text: str) -> set[str]:
+    """Public alias: used by librarian.py to reject invented facts."""
+    return _key(text)
+
+
+def find_note(text: str) -> Path | None:
+    """Return an existing note that says (roughly) the same thing."""
+    target = _key(text)
+    if not target:
+        return None
+
+    for path in NOTES.glob("*.md"):
+        if path.name == DIGEST_NAME:
+            continue
+        body = path.read_text(encoding="utf-8", errors="ignore")
+        other = _key(body.split("---", 2)[-1])
+        if not other or len(target & other) < 3:
+            continue
+        # Jaccard similarity: 1.0 = identical wording
+        if len(target & other) / len(target | other) >= 0.6:
+            return path
+    return None
+
+
 def remember(text: str, tags: list[str] | None = None) -> Path:
     """Write one fact to its own Markdown file. Returns the path.
 
@@ -79,6 +115,10 @@ def remember(text: str, tags: list[str] | None = None) -> Path:
     text = text.strip()
     if not text:
         raise ValueError("refusing to save an empty note")
+
+    existing = find_note(text)
+    if existing:
+        return existing
 
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     path = NOTES / f"{stamp}-{_slug(text)}.md"
@@ -123,6 +163,14 @@ def recall(query: str, k: int = 5, budget: int = 3000) -> str:
         scored.append((score, path, body))
 
     scored.sort(key=lambda row: (-row[0], -row[1].stat().st_mtime))
+
+    if not scored:
+        # Nothing matched. With a small vault, show the newest notes so that
+        # "what do you know about me?" still gets a real answer. This is a
+        # deliberately crude fallback; delete it once you have >50 notes.
+        recent = sorted(NOTES.glob("*.md"), key=lambda p: -p.stat().st_mtime)[:3]
+        scored = [(0.0, p, p.read_text(encoding="utf-8", errors="ignore")) for p in recent]
+        scored = [row for row in scored if row[1].name != DIGEST_NAME]
 
     chunks, used = [], 0
     for _, path, body in scored[:k]:

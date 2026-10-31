@@ -7,8 +7,10 @@ asks for -> repeat -> save. That is the entire idea. Read `turn()` first.
 from __future__ import annotations
 
 import json
+import re
 import sys
 
+import librarian
 import memory
 from llm import MODEL, PROVIDER, chat
 
@@ -17,7 +19,8 @@ SYSTEM = """You are my second brain: a patient assistant with a long memory.
 How to behave:
 - Be concise. No filler, no flattery.
 - When I tell you something durable about me (a preference, a decision, a
-  fact about a project), call remember(). One self-contained fact per call.
+  fact about a project), call remember(). One self-contained fact per call,
+  and at most two calls per message.
 - Do not remember small talk, one-off questions, or things you are guessing.
 - If a note below contradicts me, say so instead of silently updating it.
 - If you don't know, say you don't know. Never invent a memory.
@@ -74,13 +77,86 @@ def build_system(user_text: str) -> str:
     )
 
 
-def run_tool(name: str, args: dict) -> str:
+def run_tool(name: str, args: dict, user_text: str = "") -> str:
     if name == "remember":
-        path = memory.remember(args.get("text", ""), args.get("tags"))
-        return f"Saved as notes/{path.name}"
+        text = args.get("text", "").strip()
+        # Same guard as the librarian: only save things I actually said.
+        if not librarian.plausible(text, user_text):
+            return "Refused: that is not a fact the user stated."
+        known = memory.find_note(text)
+        path = memory.remember(text, args.get("tags"))
+        return f"Already known: {path.name}" if known else f"Saved as notes/{path.name}"
     if name == "search_notes":
         return memory.recall(args.get("query", "")) or "No notes matched."
     return f"Unknown tool: {name}"
+
+
+def journal(user_text: str) -> None:
+    """The safety net: catch durable facts the model didn't think to save."""
+    try:
+        for fact in librarian.extract(user_text):
+            if memory.find_note(fact):
+                continue
+            path = memory.remember(fact, ["auto"])
+            print(f"  · noted -> notes/{path.name}")
+    except Exception:
+        pass  # never let note-taking break the conversation
+
+
+TOOL_TAG = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+
+
+def salvage(text: str, user_text: str = "") -> str:
+    """Small models sometimes leak a raw <tool_call>{...}</tool_call> tag into
+    their prose. Run it, and hide the machinery from the user."""
+    if "<tool_call>" not in text:
+        return text.strip()
+
+    def handle(match: re.Match) -> str:
+        try:
+            data = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return ""
+        name = data.get("name") or ""
+        args = data.get("arguments") or {}
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                return ""
+        if name:
+            print(f"  · {name} -> {run_tool(name, args, user_text)}")
+        return ""
+
+    text = TOOL_TAG.sub(handle, text)
+
+    # unterminated tag (common: the model gets cut off mid-call)
+    if "<tool_call>" in text:
+        head, _, tail = text.partition("<tool_call>")
+        try:
+            clean = tail.strip().removeprefix("```json").removesuffix("```").strip()
+            data = json.loads(clean)
+            if data.get("name"):
+                print(
+                    f"  · {data['name']} -> "
+                    f"{run_tool(data['name'], data.get('arguments') or {}, user_text)}"
+                )
+        except Exception:
+            pass
+        text = head
+
+    return text.strip()
+
+
+ECHO = ("already known:", "saved as notes/", "no notes matched", "refused:")
+
+
+def _finish(answer: str, user_text: str = "") -> str:
+    answer = salvage(answer, user_text) or "(the model said nothing useful)"
+    if answer.lower().startswith(ECHO):
+        answer = "Noted."  # it echoed a tool result instead of answering
+    memory.log_turn("assistant", answer)
+    return answer
 
 
 def turn(messages: list[dict], user_text: str) -> str:
@@ -89,7 +165,10 @@ def turn(messages: list[dict], user_text: str) -> str:
     messages[0] = {"role": "system", "content": build_system(user_text)}
     messages.append({"role": "user", "content": user_text})
 
-    for _ in range(4):  # safety cap: never loop forever
+    # Two rounds with tools. Small models sometimes get into a loop of
+    # "call tool, call tool, ...", so after two rounds we take the tools
+    # away and force a plain answer. Always answer.
+    for _ in range(2):
         msg = chat(messages, TOOLS)
 
         # Rebuild the message by hand instead of model_dump(): fewer surprises.
@@ -109,8 +188,8 @@ def turn(messages: list[dict], user_text: str) -> str:
         messages.append(assistant)
 
         if not msg.tool_calls:
-            answer = msg.content or "(empty reply)"
-            memory.log_turn("assistant", answer)
+            answer = _finish(msg.content or "(empty reply)", user_text)
+            journal(user_text)
             return answer
 
         for call in msg.tool_calls:
@@ -118,13 +197,21 @@ def turn(messages: list[dict], user_text: str) -> str:
                 args = json.loads(call.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}  # small models sometimes emit broken JSON
-            result = run_tool(call.function.name, args)
+            result = run_tool(call.function.name, args, user_text)
             print(f"  · {call.function.name} -> {result}")
             messages.append(
                 {"role": "tool", "tool_call_id": call.id, "content": result}
             )
 
-    return "(stopped: too many tool calls in a row)"
+    messages.append(
+        {
+            "role": "user",
+            "content": "Now answer me directly in one or two sentences. Do not call any tools.",
+        }
+    )
+    msg = chat(messages, None)  # no tools: it has to talk to us now
+    journal(user_text)
+    return _finish(msg.content or "(the model returned nothing)", user_text)
 
 
 def trim(messages: list[dict], keep: int = 20) -> list[dict]:

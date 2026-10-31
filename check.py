@@ -8,50 +8,52 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import librarian
 import memory
 from llm import MODEL, PROVIDER, chat
 
-OK, BAD, WARN = "  ok  ", " FAIL ", " warn "
+OK, WARN, BAD = "  ok  ", " warn ", " FAIL "
 
 
-def check(label: str, fn) -> bool:
+def check(label: str, fn, required: bool = True) -> str:
+    """Run one check. Returns 'ok', 'warn' or 'fail'."""
     try:
-        detail = fn()
-        print(f"[{OK}] {label}" + (f" — {detail}" if detail else ""))
-        return True
+        detail, level = fn()
+        print(f"[{OK if level == 'ok' else WARN}] {label} — {detail}")
+        return level
     except Exception as exc:
-        print(f"[{BAD}] {label} — {type(exc).__name__}: {exc}")
-        return False
+        level = "fail" if required else "warn"
+        print(f"[{BAD if required else WARN}] {label} — {type(exc).__name__}: {exc}")
+        return level
 
 
-def python_version() -> str:
+def python_version() -> tuple[str, str]:
     if sys.version_info < (3, 11):
         raise RuntimeError("need Python 3.11+")
-    return sys.version.split()[0]
+    return sys.version.split()[0], "ok"
 
 
-def deps() -> str:
+def deps() -> tuple[str, str]:
     import numpy, openai  # noqa: F401
-    return "openai, numpy, pydantic import fine"
+    return "openai, numpy, pydantic import fine", "ok"
 
 
-def venv() -> str:
-    inside = Path(sys.prefix).name == ".venv"
-    if not inside:
+def venv() -> tuple[str, str]:
+    if Path(sys.prefix).name != ".venv":
         raise RuntimeError("not in the project venv — use `uv run python check.py`")
-    return str(Path(sys.prefix).parent)
+    return str(Path(sys.prefix).parent), "ok"
 
 
-def model_reachable() -> str:
+def model_reachable() -> tuple[str, str]:
     reply = chat([{"role": "user", "content": "Reply with the single word: ready"}])
     text = (reply.content or "").strip()
     if not text:
         raise RuntimeError("model returned nothing")
-    return f"{MODEL} said {text!r}"
+    return f"{MODEL} said {text!r}", "ok"
 
 
-def tool_calling() -> str:
-    """Can this model actually call a function? Not all small models can."""
+def tool_calling() -> tuple[str, str]:
+    """Not all small models call tools reliably. That's OK — see librarian.py."""
     reply = chat(
         [{"role": "user", "content": "Save the fact 'the sky is blue' using the tool."}],
         tools=[
@@ -69,35 +71,43 @@ def tool_calling() -> str:
             }
         ],
     )
-    if not reply.tool_calls:
-        raise RuntimeError("model replied in prose instead of calling the tool")
-    return "tool calls work"
+    if reply.tool_calls:
+        return "tool calls work", "ok"
+    return "model sometimes answers in prose; the librarian covers this", "warn"
 
 
-def writable() -> str:
+def librarian_works() -> tuple[str, str]:
+    facts = librarian.extract("I'm learning Python and I use VS Code.")
+    if not facts:
+        raise RuntimeError("extracted nothing from a message with two facts")
+    return f"extracted {len(facts)} fact(s)", "ok"
+
+
+def writable() -> tuple[str, str]:
     memory.log_turn("system", "check.py ping")
     path = memory.remember("check.py wrote this note; safe to delete.")
     path.unlink()
-    return "can write to brain.db and notes/"
+    return "can write to brain.db and notes/", "ok"
 
 
 def main() -> None:
     print(f"\nbrain doctor · provider={PROVIDER} model={MODEL}\n")
-    results = [
+    levels = [
         check("python version", python_version),
         check("project venv", venv),
         check("dependencies", deps),
         check("writable storage", writable),
         check("model reachable", model_reachable),
-        check("tool calling", tool_calling),
+        check("tool calling", tool_calling, required=False),
+        check("memory extraction", librarian_works),
     ]
 
     print()
-    if all(results):
-        print("All good. Start with:  uv run python main.py")
-    else:
+    if "fail" in levels:
         print("Fix the FAIL lines above, then run this again.")
         print("Most common cause: Ollama isn't running -> brew services start ollama")
+    else:
+        print("All good. Start with:  uv run python main.py")
     print()
 
 

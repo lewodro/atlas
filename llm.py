@@ -26,12 +26,17 @@ else:
     )
 
 
-def chat(messages: list[dict], tools: list[dict] | None = None):
-    """One completion. Returns the assistant message object."""
+def chat(messages: list[dict], tools: list[dict] | None = None, **options):
+    """One completion. Returns the assistant message object.
+
+    Extra keyword arguments (temperature, response_format, ...) are passed
+    straight through to the API.
+    """
     response = _client.chat.completions.create(
         model=MODEL,
         messages=messages,
         tools=tools,
-        temperature=0.3,
+        temperature=options.pop("temperature", 0.3),
+        **options,
     )
     return response.choices[0].message
