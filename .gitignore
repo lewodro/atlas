@@ -1,0 +1,8 @@
+# keep secrets and machine state out of git
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# the raw conversation log is personal; the notes/ vault is meant to be read
+brain.db

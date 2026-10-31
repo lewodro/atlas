@@ -1,0 +1,17 @@
+[
+  {
+    "query": "what language am I learning",
+    "expect": "python",
+    "note": "saved by the seed script"
+  },
+  {
+    "query": "where do my projects live",
+    "expect": "dev",
+    "note": ""
+  },
+  {
+    "query": "which editor do I use",
+    "expect": "vscode",
+    "note": ""
+  }
+]
