@@ -1,0 +1,7 @@
+[
+  {"query": "what laptop or GPU do I have", "expect": "2060"},
+  {"query": "what am I studying", "expect": "computer science"},
+  {"query": "which programming language do I write", "expect": "python"},
+  {"query": "how much RAM does my mac have", "expect": "8 gb"},
+  {"query": "where are my projects", "expect": "dev"}
+]

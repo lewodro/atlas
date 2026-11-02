@@ -1,0 +1,28 @@
+#!/bin/sh
+# atlas — launcher for ~/dev/atlas
+#
+#   atlas                     chat (coach mode)
+#   atlas tutor               chat in a mode: coach|tutor|review|debug|plan
+#   atlas "question"          one-shot
+#   atlas today               what have I been doing?
+#   atlas scan                append an activity snapshot
+#   atlas check|notes|sleep|eval|seed
+
+set -e
+DIR="$HOME/dev/atlas"
+cd "$DIR" || { echo "atlas not found at $DIR"; exit 1; }
+
+case "${1:-}" in
+  check)  shift; exec uv run python check.py "$@" ;;
+  notes)  shift; exec uv run python memory.py --stats "$@" ;;
+  search) shift; exec uv run python memory.py "$@" ;;
+  today)  shift; exec uv run python activity.py --scan "$@" ;;
+  scan)   shift; exec uv run python activity.py --scan "$@" ;;
+  sleep)  shift; exec uv run python consolidate.py "$@" ;;
+  eval)   shift; exec uv run python eval/run_eval.py "$@" ;;
+  seed)   shift; exec uv run python seed.py "$@" ;;
+  --once) shift; exec uv run python main.py --once "$@" ;;
+  coach|tutor|review|debug|plan) exec uv run python main.py --mode "$@" ;;
+  "")     exec uv run python main.py ;;
+  *)      exec uv run python main.py --once "$@" ;;
+esac

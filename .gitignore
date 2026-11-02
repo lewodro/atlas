@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# portable ollama + downloaded models: big, machine-local
+vendor/
+
+# runtime state
+data/
+
+# notes/ is YOUR memory: keep it, back it up, but never publish it by accident
