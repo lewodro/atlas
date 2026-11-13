@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>atlas</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div id="app">
+
+  <aside id="sidebar">
+    <header class="side-head">
+      <span class="logo">atlas</span>
+      <button id="new-chat" title="new chat (⌘K)">+</button>
+    </header>
+
+    <input id="filter" placeholder="filter…" autocomplete="off" spellcheck="false" />
+
+    <nav id="sessions" aria-label="saved chats"></nav>
+
+    <footer class="side-foot">
+      <div id="stats" class="stats"></div>
+      <div id="model" class="model"></div>
+    </footer>
+  </aside>
+
+  <main id="main">
+    <header class="top">
+      <button id="menu" class="menu" title="chats">≡</button>
+      <h1 id="title">new chat</h1>
+      <span id="mode-chip" class="chip">coach</span>
+      <span class="spacer"></span>
+      <select id="mode" title="mode"></select>
+      <span id="status" class="status"></span>
+    </header>
+
+    <section id="messages" aria-live="polite"></section>
+
+    <form id="composer" autocomplete="off">
+      <textarea id="input" rows="1" placeholder="message atlas…  ⏎ send · ⇧⏎ newline" spellcheck="false"></textarea>
+      <button id="send" type="submit" title="send">↑</button>
+      <button id="stop" type="button" title="stop" hidden>■</button>
+    </form>
+  </main>
+
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

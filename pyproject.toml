@@ -1,4 +1,5 @@
 [project]
+<<<<<<< HEAD
 name = "atlas"
 version = "0.1.0"
 description = "A local mentor: memory, modes, and awareness of what you're working on."
@@ -8,5 +9,18 @@ dependencies = [
     "numpy>=2.5.4",
 ]
 
+=======
+name = "brain"
+version = "0.1.0"
+description = "A second brain: a tiny harness with persistent memory."
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.5.4",
+    "openai>=3.42.0",
+    "pydantic>=2.14.2",
+]
+
+# This is an app, not a library: no build step, just run the .py files.
+>>>>>>> d787cee333787e4d4ee9d4e9a4d633617d33a4fe
 [tool.uv]
 package = false

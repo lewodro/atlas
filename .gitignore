@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 .venv/
 __pycache__/
 *.pyc
@@ -13,3 +14,13 @@ data/
 
 # your personal memory: never publish this
 notes/
+=======
+# keep secrets and machine state out of git
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# the raw conversation log is personal; the notes/ vault is meant to be read
+brain.db
+>>>>>>> d787cee333787e4d4ee9d4e9a4d633617d33a4fe
