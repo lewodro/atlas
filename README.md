@@ -24,6 +24,34 @@ anywhere.
 
 ---
 
+## Demo
+
+<!-- Record it: see docs/README.md, then uncomment.
+![Atlas demo](docs/media/demo.gif)
+-->
+
+```console
+$ atlas
+atlas · life + habits + focus. Keeps you honest.
+      · qwen2.5:7b on remote GPU @ http://192.168.1.42:11434/v1 · 18 notes
+
+[coach]> I'm behind on my C assignment and I keep avoiding it.
+
+atlas> What's the first 10 minutes of it look like — not the whole
+       assignment, just the part you're avoiding.
+
+[coach]> probably just setting up the toolchain again
+
+atlas> Then that's today's task. Setup only. Nothing else.
+       You avoided it because it's boring, not because it's hard.
+
+[coach]> /quit
+```
+
+Two diagrams and the design reasoning: **[docs/architecture.md](docs/architecture.md)**.
+
+---
+
 ## Why another AI assistant?
 
 Because the interesting problem isn't the model. It's **memory you can trust.**

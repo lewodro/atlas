@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="520" viewBox="0 0 1100 520" role="img" aria-label="Atlas runs the harness on the client and the model on a GPU machine over the local network">
+  <defs>
+    <style>
+      .bg    { fill:#0b0f14 }
+      .card  { fill:#121821; stroke:#22d3a6; stroke-width:1.5; rx:14 }
+      .card2 { fill:#121821; stroke:#5b8def; stroke-width:1.5; rx:14 }
+      .t     { fill:#e6edf3; font-family:'SF Mono',Menlo,Consolas,monospace; font-size:15px }
+      .dim   { fill:#8b98a5; font-family:'SF Mono',Menlo,Consolas,monospace; font-size:13px }
+      .h     { fill:#22d3a6; font-family:'SF Mono',Menlo,Consolas,monospace; font-size:17px; font-weight:bold }
+      .h2    { fill:#5b8def; font-family:'SF Mono',Menlo,Consolas,monospace; font-size:17px; font-weight:bold }
+      .wire  { stroke:#e6edf3; stroke-width:2; fill:none; marker-end:url(#a) }
+      .wire2 { stroke:#e6edf3; stroke-width:2; fill:none; marker-end:url(#b) }
+    </style>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#e6edf3"/>
+    </marker>
+    <marker id="b" markerWidth="10" markerHeight="10" refX="1" refY="3" orient="auto">
+      <path d="M9,0 L0,3 L9,6 Z" fill="#e6edf3"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1100" height="520"/>
+
+  <text class="t" x="40" y="42" font-size="14" fill="#8b98a5">atlas · one memory, any model</text>
+
+  <!-- left card -->
+  <rect class="card" x="40" y="90" width="380" height="330"/>
+  <text class="h" x="64" y="126">MacBook · the brain</text>
+  <text class="dim" x="64" y="150">8 GB, no GPU needed</text>
+
+  <rect x="64" y="172" width="332" height="46" rx="8" fill="#0d1319" stroke="#25303b"/>
+  <text class="t" x="80" y="200">main.py · harness loop</text>
+
+  <rect x="64" y="228" width="332" height="46" rx="8" fill="#0d1319" stroke="#25303b"/>
+  <text class="t" x="80" y="256">memory.py · recall + embeddings</text>
+
+  <rect x="64" y="284" width="332" height="46" rx="8" fill="#0d1319" stroke="#25303b"/>
+  <text class="t" x="80" y="312">librarian.py · 3 guards</text>
+
+  <rect x="64" y="340" width="332" height="58" rx="8" fill="#0d1319" stroke="#22d3a6"/>
+  <text class="t" x="80" y="364">notes/*.md</text>
+  <text class="dim" x="80" y="384">plain markdown · editable · yours</text>
+
+  <!-- right card -->
+  <rect class="card2" x="680" y="90" width="380" height="330"/>
+  <text class="h2" x="704" y="126">GPU laptop · the muscle</text>
+  <text class="dim" x="704" y="150">RTX 2060, optional</text>
+
+  <rect x="704" y="172" width="332" height="46" rx="8" fill="#0d1319" stroke="#25303b"/>
+  <text class="t" x="720" y="200">ollama serve --host 0.0.0.0</text>
+
+  <rect x="704" y="228" width="332" height="46" rx="8" fill="#0d1319" stroke="#25303b"/>
+  <text class="t" x="720" y="256">qwen2.5:7b · ~30 tok/s</text>
+
+  <rect x="704" y="284" width="332" height="46" rx="8" fill="#0d1319" stroke="#25303b"/>
+  <text class="t" x="720" y="312">nomic-embed-text</text>
+
+  <rect x="704" y="340" width="332" height="58" rx="8" fill="#0d1319" stroke="#5b8def"/>
+  <text class="t" x="720" y="364">no account · no cloud</text>
+  <text class="dim" x="720" y="384">LAN only · firewall: private profile</text>
+
+  <!-- link -->
+  <path class="wire" d="M420 250 L678 250"/>
+  <path class="wire2" d="M680 276 L422 276"/>
+  <text class="dim" x="470" y="238">http :11434/v1</text>
+  <text class="dim" x="470" y="300">one env var to switch</text>
+
+  <!-- footer -->
+  <text class="dim" x="40" y="470">Laptop asleep? ATLAS_BASE_URL=127.0.0.1 and the 3B model takes over. Same memory, same notes, same answers — just slower.</text>
+</svg>

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-label="Two-pass memory: a chat call and a guaranteed librarian call, filtered by three guards, written to markdown, retrieved by embeddings">
+  <defs>
+    <style>
+      .bg   { fill:#0b0f14 }
+      .box  { fill:#121821; stroke:#25303b; stroke-width:1.5; rx:12 }
+      .good { fill:#121821; stroke:#22d3a6; stroke-width:1.5; rx:12 }
+      .bad  { fill:#121821; stroke:#ef6b73; stroke-width:1.5; rx:12 }
+      .t    { fill:#e6edf3; font-family:'SF Mono',Menlo,Consolas,monospace; font-size:15px }
+      .dim  { fill:#8b98a5; font-family:'SF Mono',Menlo,Consolas,monospace; font-size:12.5px }
+      .h    { fill:#22d3a6; font-family:'SF Mono',Menlo,Consolas,monospace; font-size:16px; font-weight:bold }
+      .r    { fill:#ef6b73; font-family:'SF Mono',Menlo,Consolas,monospace; font-size:14px }
+      .ln   { stroke:#8b98a5; stroke-width:1.8; fill:none; marker-end:url(#arr) }
+    </style>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#8b98a5"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1100" height="620"/>
+  <text class="t" x="40" y="40" font-size="14" fill="#8b98a5">atlas · writing memory</text>
+
+  <!-- step 1 -->
+  <rect class="box" x="40" y="70" width="300" height="70"/>
+  <text class="t" x="60" y="100">you type a message</text>
+  <text class="dim" x="60" y="122">"I'm learning C. How do pointers work?"</text>
+
+  <path class="ln" d="M190 140 L190 176"/>
+
+  <!-- split -->
+  <rect class="box" x="40" y="180" width="460" height="86"/>
+  <text class="h" x="60" y="210">1 · chat(messages, tools)</text>
+  <text class="dim" x="60" y="232">answers you · may call remember()</text>
+  <text class="dim" x="60" y="250">small models get this right ~50% of the time</text>
+
+  <rect class="box" x="530" y="180" width="530" height="86"/>
+  <text class="h" x="550" y="210">2 · librarian(message) → JSON</text>
+  <text class="dim" x="550" y="232">"what here is durable?" · temperature 0 · structured output</text>
+  <text class="dim" x="550" y="250">the guaranteed path — can't be skipped by a lazy model</text>
+
+  <path class="ln" d="M270 266 L270 302"/>
+  <path class="ln" d="M795 266 L795 302"/>
+
+  <!-- guards -->
+  <rect class="good" x="40" y="306" width="1020" height="118"/>
+  <text class="h" x="60" y="336">three guards — where most personal-AI projects fail</text>
+  <text class="dim" x="60" y="362">1  stated      must start with "The user…" or "I…"     ✗ "here's how pointers work"</text>
+  <text class="dim" x="60" y="386">2  not meta    no inferred motives or conversation talk ✗ "interested in pointers"</text>
+  <text class="dim" x="60" y="410">3  grounded    must share a real word with your message ✗ "the user uses VS Code"</text>
+
+  <path class="ln" d="M270 424 L270 460"/>
+  <path class="ln" d="M795 424 L795 460"/>
+
+  <!-- storage -->
+  <rect class="box" x="40" y="464" width="470" height="92"/>
+  <text class="t" x="60" y="494">notes/*.md</text>
+  <text class="dim" x="60" y="516">one fact per file · you can edit or rm it</text>
+  <text class="dim" x="60" y="538">gitignored: this is your life, not code</text>
+
+  <rect class="box" x="530" y="464" width="530" height="92"/>
+  <text class="t" x="550" y="494">data/embeddings.json</text>
+  <text class="dim" x="550" y="516">nomic-embed-text · invalidated by file mtime</text>
+  <text class="dim" x="550" y="538">misses → keyword search → newest notes</text>
+
+  <text class="dim" x="40" y="596">recall(): embed the question → cosine similarity → top 5 notes → system prompt. Generated files (_digest, _reflection) are excluded.</text>
+</svg>
