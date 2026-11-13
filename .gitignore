@@ -10,3 +10,6 @@ vendor/
 data/
 
 # notes/ is YOUR memory: keep it, back it up, but never publish it by accident
+
+# your personal memory: never publish this
+notes/

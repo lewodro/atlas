@@ -1,0 +1,23 @@
+[
+  {"query": "what laptop or GPU do I have", "expect": "2060"},
+  {"query": "what am I studying", "expect": "computer science"},
+  {"query": "which programming language do I write", "expect": "python"},
+  {"query": "how much RAM does my mac have", "expect": "8 gb"},
+  {"query": "where are my projects", "expect": "dev"},
+
+  {"query": "what time do I usually go to sleep", "expect": ""},
+  {"query": "what am I studying this semester", "expect": ""},
+  {"query": "what is my current project", "expect": ""},
+  {"query": "how long can I focus before I break", "expect": ""},
+  {"query": "what do I do when I procrastinate", "expect": ""},
+  {"query": "what are my fixed monthly costs", "expect": ""},
+  {"query": "who do I learn the most from", "expect": ""},
+  {"query": "what did I get wrong in my last assignment", "expect": ""},
+  {"query": "what is my goal for this year", "expect": ""},
+  {"query": "why am I studying computer science", "expect": ""},
+  {"query": "what kind of explanation helps me most", "expect": ""},
+  {"query": "what did I abandon and why", "expect": ""},
+  {"query": "what does my typical weekday look like", "expect": ""},
+  {"query": "what am I avoiding right now", "expect": ""},
+  {"query": "what would make me quit this degree", "expect": ""}
+]

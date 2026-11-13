@@ -1,8 +1,8 @@
-"""Evaluation: does memory retrieve the right note?
+"""Scoreboard: does Atlas still know you?
 
-Cheap (no model call), fast. Run it after every change to recall().
+Reads training/questions.json. Questions with an empty "expect" are pending —
+fill them in as the notes exist. Retrieval only: no model call, runs in ~3s.
 
-    uv run python seed.py
     uv run python eval/run_eval.py
 """
 
@@ -13,9 +13,12 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 import memory  # noqa: E402
+
+QUESTIONS = ROOT / "training" / "questions.json"
 
 
 def norm(text: str) -> str:
@@ -23,17 +26,23 @@ def norm(text: str) -> str:
 
 
 def main() -> int:
-    cases = json.loads((Path(__file__).parent / "questions.json").read_text())
-    passed = 0
+    cases = json.loads(QUESTIONS.read_text())
+    passed = failed = pending = 0
 
     for case in cases:
-        hits = norm(memory.recall(case["query"]))
-        hit = norm(case["expect"]) in hits
+        expect = (case.get("expect") or "").strip()
+        if not expect:
+            pending += 1
+            print(f"[todo] {case['query']!r}")
+            continue
+        hit = norm(expect) in norm(memory.recall(case["query"]))
         passed += hit
-        print(f"[{'pass' if hit else 'FAIL'}] {case['query']!r} -> {case['expect']!r}")
+        failed += not hit
+        print(f"[{'pass' if hit else 'FAIL'}] {case['query']!r} -> {expect!r}")
 
-    print(f"\n{passed}/{len(cases)} passed")
-    return 0 if passed == len(cases) else 1
+    total = passed + failed
+    print(f"\n{passed}/{total} passed · {pending} pending (fill them in)")
+    return 0 if failed == 0 else 1
 
 
 if __name__ == "__main__":

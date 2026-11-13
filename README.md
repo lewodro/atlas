@@ -1,116 +1,186 @@
 # Atlas
 
-A local AI mentor that remembers you, sees what you've been working on, and
-runs on hardware you already own. No account, no subscription, no cloud.
+**A local AI mentor that actually remembers you — running on your own laptop, no account, no cloud, $0/month.**
+
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
+[![Local](https://img.shields.io/badge/runs-100%25%20local-brightgreen)]()
+[![License](https://img.shields.io/badge/license-MIT-black)]()
 
 ```
-MacBook (or any client)                 GPU machine (optional)
-atlas: harness + notes/ + memory  ───▶  ollama @ :11434
-       local 3B fallback                qwen2.5:7b
+you> I'm a first-year CS student, 8 GB M1, learning Python and C.
+     · noted -> notes/the-user-is-learning-python-and-c.md
+
+you> /quit
+$ atlas
+you> what do you know about me?
+
+atlas> First-year CS student on an 8 GB M1, learning Python and C.
+       You prefer short answers. You own a Windows laptop with a 2060.
 ```
 
-One memory store (`notes/*.md`), any model to read it.
+Every other assistant forgets you when the tab closes. Atlas writes to plain
+Markdown files, retrieves the relevant ones next time, and never sends them
+anywhere.
 
 ---
 
-## Can someone else run it?
+## Why another AI assistant?
 
-Yes. It's ~1,000 lines of Python, no database server, no web service, no
-accounts. Requirements:
+Because the interesting problem isn't the model. It's **memory you can trust.**
 
-| Need | Why | Install |
+| | Atlas | Hosted assistants |
 |---|---|---|
-| Python 3.12+ | runs the harness | `brew install python` |
-| uv | deps + venv | `brew install uv` |
-| Ollama | the model runtime | `brew install ollama` (or portable, below) |
-| ~4 GB disk | 3B model + embeddings | — |
-
-### macOS / Linux
-
-```bash
-git clone <repo> atlas && cd atlas
-./install.sh            # uv, ollama, model, seed, verify
-atlas                   # or: uv run python main.py
-```
-
-The installer is idempotent, needs no sudo, and never touches `notes/`.
-For a fully portable Ollama inside the project folder (no Homebrew):
-
-```bash
-./install.sh --vendored
-```
-
-### Windows GPU box (optional)
-
-`install.ps1` as Administrator: downloads portable Ollama into `vendor/`,
-binds it to your LAN, opens the firewall for the **Private** profile only,
-pulls `qwen2.5:7b`, and prints the line to paste into `.env`:
-
-```
-ATLAS_BASE_URL=http://192.168.1.42:11434/v1
-```
-
-### Verify
-
-```bash
-uv run python check.py       # 7 lines, at most one "warn"
-uv run python eval/run_eval.py   # 5/5 = memory works
-```
-
-If `check.py` passes, it runs. That is the whole portability story.
-
----
-
-## Why not just use a hosted assistant (Hermes et al.)?
-
-Hosted assistants are better products. This one is a better *arrangement*.
-
-| | Atlas | Hosted assistant |
-|---|---|---|
-| Cost | $0, forever | subscription or per-token |
-| Works offline | yes | no |
-| Your memory | files in `notes/`, editable, deletable | vendor's database |
+| Cost | $0 forever | subscription / per-token |
+| Offline | yes | no |
+| Your memory | files in `notes/` you can edit and delete | vendor's database |
 | Who can read it | you | the vendor |
-| Behaviour changes | when you edit the code | when they ship an update |
-| Setup | ~10 min, once | none |
+| Behaviour changes when | *you* edit the code | *they* ship an update |
 | Model quality | 3B–7B local | frontier |
-| Maintenance | yours | theirs |
 
-Honest trade-offs: a 7B model is not Claude. You will maintain it. It is not
-multimodal, has no mobile app, and nobody will fix your bug.
+Atlas is not smarter than Claude. It's **yours** — and it can't be repriced,
+shut down, or trained on your data.
 
-What you get that a hosted product structurally cannot give you: memory you
-can `cat`, an assistant that still works when the company is down, repriced,
-or shut down, and a system whose behaviour you can read line by line.
+---
 
-**Note:** "Hermes" means several different things (a model family, a messaging
-app, an agent product). If you meant a specific one, say which and this table
-can be sharpened.
+## Features
+
+- **Persistent memory** in plain Markdown. One fact per file. Delete a wrong
+  one with `rm`.
+- **Two-pass memory writes.** A chat call plus a cheap JSON "librarian" pass,
+  because small models only call tools correctly ~50% of the time.
+- **Three guards against invented memories.** No guesses, no meta-facts, no
+  ungrounded notes. This is the part most personal-AI projects get wrong.
+- **Semantic recall** via `nomic-embed-text`, with keyword fallback that works
+  on a plane.
+- **Five modes**: `coach`, `tutor`, `review`, `debug`, `plan`.
+- **Activity awareness**: reads your `git log` and edited files. No screenshots,
+  no keylogger, no cloud.
+- **Runs on 8 GB of RAM.** Or offload the model to a gaming laptop over Wi-Fi.
+- **~1,000 lines of Python.** No frameworks. You can read all of it.
+
+---
+
+## Quickstart
+
+```bash
+git clone https://github.com/YOU/atlas && cd atlas
+./install.sh          # uv + ollama + model + seed + verify (~5 min)
+atlas                 # talk to it
+```
+
+Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), and
+[Ollama](https://ollama.com) — or let the installer fetch a portable copy:
+
+```bash
+./install.sh --vendored    # no Homebrew, everything inside ./vendor
+```
+
+Verify:
+
+```bash
+uv run python check.py        # 7 checks
+uv run python eval/run_eval.py  # 5/5 = memory works
+```
+
+---
+
+## How memory works
+
+```
+your message
+   ├─▶ chat(messages, tools)      answers you; may call remember()
+   └─▶ librarian(message)         JSON: "what is durable here?"   (guaranteed)
+             │
+             ▼  3 guards: stated · not meta · grounded in your words
+        notes/*.md  ← human-readable, editable, one fact each
+             │
+             ▼  consolidate.py (nightly)
+        notes/_digest.md  ← compressed, always in context
+```
+
+Why two calls? A 3B model calls tools reliably about half the time. If memory
+depended on it *choosing* to save something, facts would vanish silently.
+
+Why guards? Without them a small model writes *"the user wants to learn about
+pointers"* into permanent memory — and then believes it forever.
+
+Generated files start with `_` and are excluded from recall. **Inference never
+becomes memory.**
+
+---
+
+## Modes
+
+| Mode | Use it when |
+|---|---|
+| `coach` | you need to be honest about how the week went |
+| `tutor` | learning something and want to be quizzed, not lectured at |
+| `review` | Sunday: what the commits say vs. what you say |
+| `debug` | stuck; hypotheses before fixes |
+| `plan` | the week has no shape |
+
+```
+atlas tutor          # switch hat
+/mode debug          # or mid-conversation
+/frontier            # optional: send just this question to a paid model
+```
+
+---
+
+## Use a GPU on your LAN (optional)
+
+Better answers, same memory:
+
+```powershell
+# Windows laptop with an RTX 2060
+.\install.ps1        # portable ollama, LAN bind, firewall, model
+```
+
+It prints one line for the client's `.env`:
+
+```ini
+ATLAS_BASE_URL=http://192.168.1.42:11434/v1
+ATLAS_MODEL=qwen2.5:7b
+```
+
+Mac stays the brain, GPU becomes the muscle. Laptop asleep? Falls back to the
+local 3B.
+
+---
+
+## Six-month program
+
+`training/` contains a 26-week plan for turning the vault into a model of you:
+daily prompts, weekly reviews, prediction scoring, and a 20-question eval.
+No fine-tuning — just better memory.
+
+Start with [`training/README.md`](training/README.md).
+
+---
+
+## FAQ
+
+**Does it send my data anywhere?** Not by default. Ollama is local, memory is
+local. Only if you configure a frontier provider.
+
+**Will it run on 8 GB?** Yes — that's the target machine. A 3B model plus
+embeddings fits comfortably.
+
+**Is this a fine-tune?** No. Memory, not weights. That's why swapping models
+doesn't lose your history.
+
+**Why not LangChain?** You can't debug a harness you didn't write.
+
+**Is it production-ready?** No. It's a single-user tool that you maintain.
+That's the trade for owning it.
 
 ---
 
 ## Privacy
 
-- Memory and notes never leave the machine by default.
-- `activity.py` reads only `git log` and file timestamps under your projects
-  folder. No screenshots, no keylogger, no shell history.
-- If you set `ATLAS_BASE_URL` or a frontier key, prompts and retrieved notes
-  go to that provider. Read `COSTS.md` first.
-- `.env`, `data/` and `vendor/` are gitignored. **`notes/` is not** — it is
-  your memory, and it is personal.
+`notes/` and `data/` are gitignored. **This repo ships code, not memories.**
+If you fork it, keep your vault private.
 
----
+## License
 
-## Files
-
-| | |
-|---|---|
-| `main.py` | the harness loop + chat commands |
-| `memory.py` | notes, embeddings, keyword fallback |
-| `modes.py` | coach / tutor / review / debug / plan |
-| `activity.py` | what you've actually been doing |
-| `librarian.py` | decides what is worth remembering |
-| `COSTS.md` | why "always-on" costs more than it looks |
-| `SETUP-MAC.md`, `SETUP-WINDOWS.md` | the long version |
-
-No license file yet — add one before publishing (see `is it public?` below).
+MIT. Take it, change it, ship it.
