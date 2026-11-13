@@ -112,6 +112,26 @@ uv run python eval/run_eval.py  # 5/5 = memory works
 
 ---
 
+## Web UI
+
+Same harness, same memory, saved sessions. Browser optional.
+
+```bash
+uv run python server.py     # http://localhost:7777
+atlas web                   # starts the server and opens it
+```
+
+<!-- ![web](docs/media/web.png) -->
+
+One stdlib HTTP server, one HTML file, vanilla JS, no build step. Streams
+tokens over SSE, keeps every chat in SQLite, shows notes/chats/turns in the
+sidebar.
+
+`⌘K` new chat · `↵` send · `⇧↵` newline · `esc` stop · double-click a title
+to rename.
+
+---
+
 ## How memory works
 
 ```
