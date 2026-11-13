@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Atlas
 
 **A local AI mentor that actually remembers you — running on your own laptop, no account, no cloud, $0/month.**
