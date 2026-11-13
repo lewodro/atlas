@@ -23,7 +23,7 @@ from pathlib import Path
 
 from config import ROOT_DATA
 
-PROJECTS = Path(os.getenv("ATLAS_PROJECTS", str(Path.home() / "dev")))
+PROJECTS = Path(os.getenv("ATLAS_PROJECTS", str(Path.home() / ("devAI" if (Path.home() / "devAI").exists() else "dev"))))
 
 SKIP = {
     ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",

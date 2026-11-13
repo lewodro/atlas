@@ -1,5 +1,5 @@
 #!/bin/sh
-# atlas — launcher for ~/dev/atlas
+# atlas — launcher (works from any folder, follows symlinks)
 #
 #   atlas                     chat (coach mode)
 #   atlas tutor               chat in a mode: coach|tutor|review|debug|plan
@@ -9,7 +9,12 @@
 #   atlas check|notes|sleep|eval|seed
 
 set -e
-DIR="$HOME/dev/atlas"
+SELF="$0"
+while [ -L "$SELF" ]; do
+  T="$(readlink "$SELF")"
+  case "$T" in /*) SELF="$T" ;; *) SELF="$(dirname "$SELF")/$T" ;; esac
+done
+DIR="$(cd "$(dirname "$SELF")" && pwd)"
 cd "$DIR" || { echo "atlas not found at $DIR"; exit 1; }
 
 case "${1:-}" in
