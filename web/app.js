@@ -19,15 +19,25 @@ function lifecycleHeartbeat() {
 }
 
 function startLifecycle() {
+  if (lifecycleTimer) clearInterval(lifecycleTimer);
   lifecycleHeartbeat();
   lifecycleTimer = setInterval(lifecycleHeartbeat, 3000);
 }
 
 window.addEventListener("pagehide", () => {
-  if (lifecycleTimer) clearInterval(lifecycleTimer);
+  if (lifecycleTimer) {
+    clearInterval(lifecycleTimer);
+    lifecycleTimer = null;
+  }
   navigator.sendBeacon("/api/lifecycle/close", new Blob(["{}"], {
     type: "application/json",
   }));
+});
+
+// Safari and Firefox may restore the page from back/forward cache without
+// running boot() again. Reclaim the server lease when that happens.
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) startLifecycle();
 });
 
 /* ---------------------------------------------------------------- utils */
