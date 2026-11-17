@@ -84,12 +84,9 @@ grep -q '^ATLAS_BASE_URL=' .env 2>/dev/null || echo "ATLAS_BASE_URL=http://127.0
 
 # ---------------------------------------------------------------- verify
 say "5/5  verify"
-if [ ! -d notes ] || [ -z "$(ls -A notes 2>/dev/null)" ]; then
-  uv run python seed.py
-fi
-uv run python eval/run_eval.py
 uv run python check.py
 
 say "done"
 echo "  start:   uv run python main.py"
 echo "  or:      ln -sf \"$(pwd)/atlas\" ~/.local/bin/atlas && atlas"
+echo "  memory:  atlas remember \"I ...\"  (or just tell Atlas in chat)"

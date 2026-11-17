@@ -18,7 +18,7 @@ cd ~/dev/atlas
 ./install.sh --vendored   # portable ollama inside ./vendor (no brew needed)
 ```
 
-The installer is idempotent: uv, ollama, the 3B model, seed notes, eval, doctor.
+The installer is idempotent: uv, ollama, the 3B model, and doctor.
 It never touches `notes/` or `data/`.
 
 Then:

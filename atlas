@@ -6,7 +6,7 @@
 #   atlas "question"          one-shot
 #   atlas today               what have I been doing?
 #   atlas scan                append an activity snapshot
-#   atlas check|notes|sleep|eval|seed
+#   atlas check|notes|remember|sleep|eval
 
 set -e
 SELF="$0"
@@ -20,6 +20,7 @@ cd "$DIR" || { echo "atlas not found at $DIR"; exit 1; }
 case "${1:-}" in
   check)  shift; exec uv run python check.py "$@" ;;
   notes)  shift; exec uv run python memory.py --stats "$@" ;;
+  remember) shift; exec uv run python memory.py --remember "$@" ;;
   search) shift; exec uv run python memory.py "$@" ;;
   web)    shift; exec uv run python server.py --open "$@" ;;
   today)  shift; exec uv run python activity.py --scan "$@" ;;
