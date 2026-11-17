@@ -1,0 +1,33 @@
+{
+  "model": "qwen2.5:3b",
+  "where": "this machine @ http://127.0.0.1:11434/v1",
+  "tools": {
+    "runs_per_prompt": 2,
+    "prompts": 8,
+    "attempts": 16,
+    "native": 12,
+    "salvaged": 0,
+    "invalid": 4,
+    "no_call": 0,
+    "native_pct": 75.0,
+    "usable_pct": 75.0
+  },
+  "retrieval": {
+    "questions": 5,
+    "hits": 5,
+    "recall_at_5": 1.0,
+    "misses": []
+  },
+  "latency": {
+    "prompts": 3,
+    "median_s": 3.98,
+    "min_s": 1.08,
+    "max_s": 6.66,
+    "all_s": [
+      6.66,
+      1.08,
+      3.98
+    ]
+  },
+  "measured_at": "2026-11-16"
+}

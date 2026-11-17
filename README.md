@@ -91,7 +91,7 @@ shut down, or trained on your data.
 ## Quickstart
 
 ```bash
-git clone https://github.com/YOU/atlas && cd atlas
+git clone https://github.com/lewodro/atlas && cd atlas
 ./install.sh          # uv + ollama + model + seed + verify (~5 min)
 atlas                 # talk to it
 ```
@@ -193,6 +193,28 @@ ATLAS_MODEL=qwen2.5:7b
 
 Mac stays the brain, GPU becomes the muscle. Laptop asleep? Falls back to the
 local 3B.
+
+---
+
+## Benchmarks
+
+Measured on an 8 GB M1 with `qwen2.5:3b`, not estimated:
+
+| measurement | result |
+|---|---|
+| tool call, native JSON | 12/16 · 75% |
+| tool call, usable after salvage | 12/16 · 75% |
+| retrieval recall@5 | 5/5 |
+| latency, median | 3.98 s |
+
+Reproduce on your own hardware:
+
+```bash
+atlas bench
+```
+
+The 3-in-4 failure rate is why `main.py` has a deterministic extraction pass
+and `librarian.py` has guards. Full output: `docs/bench.json`.
 
 ---
 
