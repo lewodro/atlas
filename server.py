@@ -20,11 +20,12 @@ Routes
 
 from __future__ import annotations
 
+import errno
 import json
 import sys
 import threading
+import time
 import webbrowser
-import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -40,6 +41,42 @@ from main import TOOLS, build_system, run_tool
 
 WEB = Path(__file__).parent / "web"
 PORT = 7777
+BROWSER_CLOSE_GRACE = 3.0
+BROWSER_IDLE_TIMEOUT = 180.0
+BROWSER_OPEN_TIMEOUT = 30.0
+
+
+class BrowserLease:
+    """Tracks whether the browser that owns an auto-opened server is alive."""
+
+    def __init__(self, now: float | None = None) -> None:
+        self._lock = threading.Lock()
+        self.started = time.monotonic() if now is None else now
+        self.last_seen: float | None = None
+        self.close_requested: float | None = None
+
+    def heartbeat(self, now: float | None = None) -> None:
+        with self._lock:
+            self.last_seen = time.monotonic() if now is None else now
+            self.close_requested = None
+
+    def close(self, now: float | None = None) -> None:
+        with self._lock:
+            if self.last_seen is not None:
+                self.close_requested = time.monotonic() if now is None else now
+
+    def should_stop(self, now: float | None = None) -> bool:
+        current = time.monotonic() if now is None else now
+        with self._lock:
+            if self.last_seen is None:
+                return current - self.started >= BROWSER_OPEN_TIMEOUT
+            if self.close_requested is not None:
+                return current - self.close_requested >= BROWSER_CLOSE_GRACE
+            return current - self.last_seen >= BROWSER_IDLE_TIMEOUT
+
+
+class AtlasHTTPServer(ThreadingHTTPServer):
+    browser_lease: BrowserLease | None = None
 
 
 # ---------------------------------------------------------------- agent
@@ -228,6 +265,16 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         body = self._body()
         try:
+            if path == "/api/lifecycle":
+                if self.server.browser_lease:
+                    self.server.browser_lease.heartbeat()
+                return self._json({"ok": True})
+
+            if path == "/api/lifecycle/close":
+                if self.server.browser_lease:
+                    self.server.browser_lease.close()
+                return self._json({"ok": True}, 202)
+
             if path == "/api/sessions":
                 mode = body.get("mode") or "coach"
                 sid = memory.create_session(mode=mode)
@@ -306,23 +353,55 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-def main() -> None:
+def _watch_browser(server: AtlasHTTPServer, lease: BrowserLease) -> None:
+    while not lease.should_stop():
+        time.sleep(1)
+    print("\n  browser closed · stopping localhost server")
+    server.shutdown()
+
+
+def main() -> int:
     global PORT
     args = sys.argv[1:]
     if "--port" in args:
         PORT = int(args[args.index("--port") + 1])
 
-    if "--open" in args:
+    open_browser = "--open" in args
+    exit_with_browser = open_browser and "--stay-open" not in args
+
+    if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
 
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    try:
+        server = AtlasHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE:
+            raise
+        print(f"atlas web is already using http://localhost:{PORT}")
+        print(f"  inspect: lsof -nP -iTCP:{PORT} -sTCP:LISTEN")
+        print("  stop the listed PID with: kill <PID>")
+        return 1
+    if exit_with_browser:
+        server.browser_lease = BrowserLease()
+        threading.Thread(
+            target=_watch_browser,
+            args=(server, server.browser_lease),
+            daemon=True,
+        ).start()
+
     print(f"atlas web · http://localhost:{PORT} · {MODEL}")
-    print("  ctrl-c to stop")
+    if exit_with_browser:
+        print("  closes automatically with the browser · ctrl-c also stops it")
+    else:
+        print("  ctrl-c to stop")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nbye")
+    finally:
+        server.server_close()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
