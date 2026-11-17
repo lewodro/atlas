@@ -39,9 +39,21 @@ MODEL = os.getenv("ATLAS_MODEL") or (
     "qwen2.5:7b" if REMOTE else "qwen2.5:3b"
 )
 
+# Keep local answers bounded. Long generations are the easiest way to make a
+# small model feel slow; users can raise this for larger/custom models.
+MAX_TOKENS = max(64, int(os.getenv("ATLAS_MAX_TOKENS", "512")))
+
 WHERE = f"{'remote GPU' if REMOTE else 'this machine'} @ {BASE_URL}"
-ROOT_NOTES = ROOT / "notes"
-ROOT_DATA = ROOT / "data"
+
+# Memory can live in the repo, any ordinary folder, or inside an Obsidian
+# vault. ATLAS_NOTES_DIR is the precise override; ATLAS_VAULT chooses the
+# conventional <vault>/Atlas/Memory folder.
+_vault = os.getenv("ATLAS_VAULT", "").strip()
+_notes = os.getenv("ATLAS_NOTES_DIR", "").strip()
+ROOT_NOTES = Path(_notes).expanduser() if _notes else (
+    Path(_vault).expanduser() / "Atlas" / "Memory" if _vault else ROOT / "notes"
+)
+ROOT_DATA = Path(os.getenv("ATLAS_DATA_DIR", str(ROOT / "data"))).expanduser()
 
 # ---------------------------------------------------------------- frontier
 # Optional second tier: a cloud model for the hard questions, while the local

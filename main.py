@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import threading
 import time
 
 import activity
@@ -30,7 +31,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "remember",
-            "description": "Save one durable fact about the user (goal, skill, tool, constraint).",
+            "description": (
+                "Save one durable fact about the user (goal, skill, tool, "
+                "constraint). The text must start with 'The user'."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -38,6 +42,28 @@ TOOLS = [
                     "tags": {"type": "array", "items": {"type": "string"}},
                 },
                 "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_memory",
+            "description": "Correct an existing saved fact after the user explicitly gives newer information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note": {
+                        "type": "string",
+                        "description": "Exact note filename or stem returned by search_notes.",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Corrected fact starting with 'The user'.",
+                    },
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["note", "text"],
             },
         },
     },
@@ -105,6 +131,15 @@ def run_tool(name: str, args: dict, user_text: str = "") -> str:
         return f"Already known: {path.name}" if known else f"Saved as notes/{path.name}"
     if name == "search_notes":
         return memory.recall(args.get("query", "")) or "No notes matched."
+    if name == "update_memory":
+        text = args.get("text", "").strip()
+        if not librarian.plausible(text, user_text):
+            return "Refused: the correction is not grounded in what the user said."
+        try:
+            path = memory.update_note(args.get("note", ""), text, args.get("tags"))
+        except ValueError as exc:
+            return f"Refused: {exc}"
+        return f"Updated {path.name}"
     if name == "recent_activity":
         return activity_block(int(args.get("hours", 24)))
     return f"Unknown tool: {name}"
@@ -153,7 +188,14 @@ def finish(answer: str, user_text: str, mode: str) -> str:
     return answer
 
 
-def turn(messages: list[dict], user_text: str, mode: str, tier: str = "local") -> str:
+def turn(
+    messages: list[dict],
+    user_text: str,
+    mode: str,
+    tier: str = "local",
+    *,
+    write_memory: bool = True,
+) -> str:
     memory.log_turn("user", user_text, mode)
     messages[0] = {"role": "system", "content": build_system(mode, user_text)}
     messages.append({"role": "user", "content": user_text})
@@ -175,7 +217,8 @@ def turn(messages: list[dict], user_text: str, mode: str, tier: str = "local") -
 
         if not msg.tool_calls:
             answer = finish(msg.content or "(empty reply)", user_text, mode)
-            journal(user_text)
+            if write_memory:
+                journal(user_text)
             return answer
 
         for call in msg.tool_calls:
@@ -191,18 +234,20 @@ def turn(messages: list[dict], user_text: str, mode: str, tier: str = "local") -
         {"role": "user", "content": "Answer directly in a few sentences. No tools."}
     )
     msg = chat(messages, None, tier=tier)
-    journal(user_text)
+    if write_memory:
+        journal(user_text)
     return finish(msg.content or "(no answer)", user_text, mode)
 
 
-def journal(user_text: str) -> None:
+def journal(user_text: str, announce: bool = True) -> None:
     """Safety net: catch durable facts the model didn't think to save."""
     try:
         for fact in librarian.extract(user_text):
             if memory.find_note(fact):
                 continue
             path = memory.remember(fact, ["auto"])
-            print(f"  · noted -> notes/{path.name}")
+            if announce:
+                print(f"  · noted -> {path}")
     except Exception:
         pass
 
@@ -254,7 +299,9 @@ def main() -> None:
     messages = [{"role": "system", "content": ""}] + memory.load_recent(16)
 
     if once:
-        print(turn(messages, once, mode, tier))
+        answer = turn(messages, once, mode, tier, write_memory=False)
+        print(answer)
+        journal(once)
         return
 
     while True:
@@ -301,7 +348,12 @@ def main() -> None:
             continue
 
         try:
-            print(f"atlas> {turn(messages, line, mode, tier)}\n")
+            answer = turn(messages, line, mode, tier, write_memory=False)
+            print(f"atlas> {answer}\n")
+            # Keep the second local-model call off the response path.
+            threading.Thread(
+                target=journal, args=(line, False), daemon=True
+            ).start()
         except Exception as exc:
             print(f"  ! {type(exc).__name__}: {exc}")
             print("  (is the server running? try `python check.py`)\n")

@@ -20,6 +20,7 @@ from config import (
     FRONTIER_BASE_URL,
     FRONTIER_MODEL,
     FRONTIER_READY,
+    MAX_TOKENS,
     MODEL,
 )
 
@@ -52,6 +53,7 @@ def chat(messages: list[dict], tools: list[dict] | None = None, tier: str = "loc
         messages=messages,
         tools=tools,
         temperature=options.pop("temperature", 0.4),
+        max_tokens=options.pop("max_tokens", MAX_TOKENS),
         **options,
     )
     return response.choices[0].message
@@ -68,6 +70,7 @@ def stream_chat(messages: list[dict], tools: list[dict] | None = None, tier: str
         messages=messages,
         tools=tools,
         temperature=options.pop("temperature", 0.4),
+        max_tokens=options.pop("max_tokens", MAX_TOKENS),
         stream=True,
         **options,
     )

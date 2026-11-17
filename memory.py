@@ -40,6 +40,7 @@ def _conn() -> sqlite3.Connection:
             mode    TEXT NOT NULL DEFAULT 'coach',
             role    TEXT NOT NULL,
             content TEXT NOT NULL,
+            session_id TEXT NOT NULL DEFAULT 'cli',
             ts      TEXT NOT NULL DEFAULT (datetime('now'))
         )
         """
@@ -218,13 +219,61 @@ def remember(text: str, tags: list[str] | None = None) -> Path:
 
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     path = NOTES / f"{stamp}-{_slug(text)}.md"
-    tag_line = ", ".join(t.strip() for t in (tags or []) if t.strip())
+    clean_tags = [
+        t.strip().replace("]", "").replace("[", "")
+        for t in (tags or [])
+        if t.strip()
+    ]
+    tag_line = ", ".join(clean_tags)
     path.write_text(
         f"---\ncreated: {dt.datetime.now().isoformat(timespec='seconds')}\n"
-        f"tags: {tag_line}\n---\n\n{text}\n",
+        f"updated: {dt.datetime.now().isoformat(timespec='seconds')}\n"
+        f"type: atlas-memory\ntags: [{tag_line}]\n---\n\n{text}\n",
         encoding="utf-8",
     )
     log_turn("memory", f"saved {path.name}")
+    return path
+
+
+def update_note(ref: str, text: str, tags: list[str] | None = None) -> Path:
+    """Replace one known memory by exact filename or stem.
+
+    Exact matching matters: a model may suggest the edit, but it never gets a
+    fuzzy delete/overwrite primitive.
+    """
+    text = text.strip()
+    if not text:
+        raise ValueError("refusing to save an empty note")
+    path = next(
+        (p for p in note_paths() if ref.strip() in {p.name, p.stem}),
+        None,
+    )
+    if path is None:
+        raise ValueError(f"no memory named {ref!r}")
+
+    old = path.read_text(encoding="utf-8", errors="ignore")
+    created = re.search(r"(?m)^created:\s*(.+)$", old)
+    created_value = (
+        created.group(1).strip()
+        if created
+        else dt.datetime.now().isoformat(timespec="seconds")
+    )
+    old_tags = re.search(r"(?m)^tags:\s*(.+)$", old)
+    clean_tags = [
+        t.strip().replace("]", "").replace("[", "")
+        for t in (tags or [])
+        if t.strip()
+    ]
+    tag_value = f"[{', '.join(clean_tags)}]" if clean_tags else (
+        old_tags.group(1).strip() if old_tags else "[]"
+    )
+    path.write_text(
+        f"---\ncreated: {created_value}\n"
+        f"updated: {dt.datetime.now().isoformat(timespec='seconds')}\n"
+        f"type: atlas-memory\ntags: {tag_value}\n---\n\n{text}\n",
+        encoding="utf-8",
+    )
+    log_turn("memory", f"updated {path.name}")
     return path
 
 
@@ -241,7 +290,17 @@ def recall(query: str, k: int = 5, budget: int = 2600) -> str:
       2. keywords (dumb, transparent, works offline forever)
       3. the newest notes, so "what do you know about me?" is never empty
     """
-    hits = _semantic_hits(query) or _keyword_hits(query)
+    # Exact keyword recall is effectively free and avoids loading/running a
+    # second model before every chat response. Semantic recall remains the
+    # fallback when wording differs ("studying" vs "learning").
+    wanted = keywords(query)
+    strategy = os.getenv("ATLAS_RETRIEVAL", "hybrid").lower()
+    if strategy == "semantic":
+        hits = _semantic_hits(query)
+    else:
+        hits = _keyword_hits(query)
+        if not hits and wanted and strategy != "keyword":
+            hits = _semantic_hits(query)
     if not hits:
         hits = [(0.0, p) for p in _recent(3)]
 
@@ -351,7 +410,13 @@ _migrate()
 if __name__ == "__main__":
     import sys
 
-    if "--stats" in sys.argv:
+    if "--remember" in sys.argv:
+        i = sys.argv.index("--remember")
+        text = " ".join(sys.argv[i + 1:]).strip()
+        if not text:
+            raise SystemExit("usage: atlas remember \"a durable fact about me\"")
+        print(remember(text, ["manual"]))
+    elif "--stats" in sys.argv:
         with _conn() as conn:
             turns = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
         print(f"turns : {turns}")
