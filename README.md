@@ -125,6 +125,12 @@ uv run python server.py     # http://localhost:7777
 atlas web                   # starts the server and opens it
 ```
 
+Running `main.py` interactively also asks whether to open the Web GUI. Choose
+`yes` once, or use `atlas web` as the shortcut next time. An auto-opened server
+stops a few seconds after its browser tab closes, so localhost is not left
+behind. Use `uv run python server.py --stay-open` only when you deliberately
+want a server that survives browser tabs and stops with `Ctrl+C`.
+
 <!-- ![web](docs/media/web.png) -->
 
 One stdlib HTTP server, one HTML file, vanilla JS, no build step. Streams

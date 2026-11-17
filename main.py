@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 import activity
 import librarian
@@ -283,6 +285,18 @@ def parse_args() -> tuple[str, str | None]:
     return mode, once
 
 
+def wants_web_gui(answer: str) -> bool:
+    return answer.strip().lower() in {"y", "yes"}
+
+
+def launch_web_gui() -> int:
+    print("  opening http://localhost:7777")
+    print("  next time, the shortcut is: atlas web")
+    print("  close the browser tab to stop the localhost server\n")
+    server_script = str(Path(__file__).with_name("server.py"))
+    return subprocess.run([sys.executable, server_script, "--open"], check=False).returncode
+
+
 def main() -> None:
     mode, once = parse_args()
     tier = "frontier" if "--frontier" in sys.argv and FRONTIER_READY else "local"
@@ -293,7 +307,16 @@ def main() -> None:
     print(f"atlas · {modes.get(mode)['blurb']}")
     print(f"      · {tier_model(tier)} on {WHERE} · {len(memory.note_paths())} notes")
     if once is None:
+        try:
+            answer = input("Do you want to open the Web GUI? [y/N] ")
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+            print()
+        if wants_web_gui(answer):
+            raise SystemExit(launch_web_gui())
+
         hint = "  /frontier" if FRONTIER_READY else ""
+        print("      · web later: atlas web")
         print(f"      · /modes  /mode <name>  /today  /notes  /stats{hint}  /quit\n")
 
     messages = [{"role": "system", "content": ""}] + memory.load_recent(16)
