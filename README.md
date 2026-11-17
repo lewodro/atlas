@@ -74,6 +74,8 @@ shut down, or trained on your data.
 
 - **Persistent memory** in plain Markdown. One fact per file. Delete a wrong
   one with `rm`.
+- **Obsidian-ready vaults.** Point `ATLAS_VAULT` at your vault; Atlas only
+  manages `Atlas/Memory/`. See **[the Obsidian guide](docs/obsidian.md)**.
 - **Two-pass memory writes.** A chat call plus a cheap JSON "librarian" pass,
   because small models only call tools correctly ~50% of the time.
 - **Three guards against invented memories.** No guesses, no meta-facts, no
@@ -84,6 +86,8 @@ shut down, or trained on your data.
 - **Activity awareness**: reads your `git log` and edited files. No screenshots,
   no keylogger, no cloud.
 - **Runs on 8 GB of RAM.** Or offload the model to a gaming laptop over Wi-Fi.
+- **Swappable models.** Ollama, llama.cpp, vLLM, LM Studio, or another
+  OpenAI-compatible endpoint. See **[custom models and speed](docs/custom-models.md)**.
 - **~1,000 lines of Python.** No frameworks. You can read all of it.
 
 ---
@@ -92,7 +96,7 @@ shut down, or trained on your data.
 
 ```bash
 git clone https://github.com/lewodro/atlas && cd atlas
-./install.sh          # uv + ollama + model + seed + verify (~5 min)
+./install.sh          # uv + ollama + model + verify (~5 min)
 atlas                 # talk to it
 ```
 
@@ -154,6 +158,12 @@ pointers"* into permanent memory — and then believes it forever.
 
 Generated files start with `_` and are excluded from recall. **Inference never
 becomes memory.**
+
+For an explicit write, without model extraction:
+
+```bash
+atlas remember "I am learning Rust."
+```
 
 ---
 
@@ -235,6 +245,9 @@ local. Only if you configure a frontier provider.
 
 **Will it run on 8 GB?** Yes — that's the target machine. A 3B model plus
 embeddings fits comfortably.
+
+**Can I use my own model?** Yes. Set `ATLAS_BASE_URL`, `ATLAS_API_KEY`, and
+`ATLAS_MODEL`. Atlas keeps the same Markdown memory when the model changes.
 
 **Is this a fine-tune?** No. Memory, not weights. That's why swapping models
 doesn't lose your history.
