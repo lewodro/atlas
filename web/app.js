@@ -12,6 +12,24 @@ const state = {
   filter: "",
 };
 
+let lifecycleTimer = null;
+
+function lifecycleHeartbeat() {
+  fetch("/api/lifecycle", { method: "POST", keepalive: true }).catch(() => {});
+}
+
+function startLifecycle() {
+  lifecycleHeartbeat();
+  lifecycleTimer = setInterval(lifecycleHeartbeat, 3000);
+}
+
+window.addEventListener("pagehide", () => {
+  if (lifecycleTimer) clearInterval(lifecycleTimer);
+  navigator.sendBeacon("/api/lifecycle/close", new Blob(["{}"], {
+    type: "application/json",
+  }));
+});
+
 /* ---------------------------------------------------------------- utils */
 
 const esc = (s) =>
@@ -354,6 +372,7 @@ document.addEventListener("keydown", (e) => {
 /* ---------------------------------------------------------------- boot */
 
 (async function boot() {
+  startLifecycle();
   await refreshStats();
   await refreshSessions();
   if (state.sessions.length) await openSession(state.sessions[0].id);
