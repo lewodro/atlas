@@ -34,6 +34,7 @@ from urllib.parse import unquote, urlparse
 import activity
 import librarian
 import memory
+import models
 import modes
 from config import FRONTIER_READY, MODEL, WHERE
 from llm import stream_chat
@@ -82,12 +83,12 @@ class AtlasHTTPServer(ThreadingHTTPServer):
 # ---------------------------------------------------------------- agent
 
 
-def _tool_round(messages: list[dict], session_id: str, user_text: str):
+def _tool_round(messages: list[dict], session_id: str, user_text: str, model: str | None = None):
     """One streaming assistant turn. Yields events, returns (text, tool_calls)."""
     content = ""
     calls: dict[int, dict] = {}
 
-    for chunk in stream_chat(messages, TOOLS):
+    for chunk in stream_chat(messages, TOOLS, model=model):
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta
@@ -109,7 +110,7 @@ def _tool_round(messages: list[dict], session_id: str, user_text: str):
     return content, list(calls.values()), None
 
 
-def stream_turn(session_id: str, user_text: str, mode: str):
+def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = None):
     """SSE event generator: delta / tool / done / error."""
     history = memory.load_recent(24, session_id)
 
@@ -126,7 +127,7 @@ def stream_turn(session_id: str, user_text: str, mode: str):
 
     try:
         for _ in range(2):
-            content, calls, err = yield from _tool_round(messages, session_id, user_text)
+            content, calls, err = yield from _tool_round(messages, session_id, user_text, model)
             if err:
                 yield ("error", {"message": err})
                 return
@@ -164,7 +165,7 @@ def stream_turn(session_id: str, user_text: str, mode: str):
             # two tool rounds and still no prose: take the tools away
             from llm import chat as plain
 
-            msg = plain(messages, None)
+            msg = plain(messages, None, model=model)
             text = msg.content or ""
             answer_parts.append(text)
             if text:
@@ -238,20 +239,23 @@ class Handler(BaseHTTPRequestHandler):
             if path in {"/app.js", "/style.css"}:
                 return self._file(WEB / path.lstrip("/"))
             if path == "/api/stats":
+                current = models.load()
                 return self._json({
                     **memory.stats(),
-                    "model": MODEL,
-                    "where": WHERE,
+                    "model": current["model"],
+                    "where": current["base_url"],
                     "frontier": FRONTIER_READY,
                     "modes": list(modes.MODES),
                 })
+            if path == "/api/models":
+                return self._json(models.describe())
             if path == "/api/sessions":
                 return self._json({"sessions": memory.list_sessions()})
             if path.startswith("/api/sessions/"):
                 sid = unquote(path.split("/")[3])
                 if not memory.session_exists(sid):
                     return self._json({"error": "no such session"}, 404)
-                session = next((s for s in memory.list_sessions() if s["id"] == sid), None)
+                session = memory.get_session(sid)
                 return self._json({
                     "session": session,
                     "messages": memory.session_messages(sid),
@@ -275,9 +279,17 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.browser_lease.close()
                 return self._json({"ok": True}, 202)
 
+            if path == "/api/settings":
+                saved = models.save(
+                    base_url=body.get("base_url", ""),
+                    api_key=body.get("api_key", ""),
+                    model=body.get("model", ""),
+                )
+                return self._json({"ok": True, **models.describe(), "saved": saved})
+
             if path == "/api/sessions":
                 mode = body.get("mode") or "coach"
-                sid = memory.create_session(mode=mode)
+                sid = memory.create_session(mode=mode, model=body.get("model"))
                 return self._json({"id": sid}, 201)
 
             if path == "/api/chat":
@@ -288,8 +300,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not text:
                     return self._json({"error": "empty message"}, 400)
 
-                session = next((s for s in memory.list_sessions() if s["id"] == sid), {})
+                session = memory.get_session(sid) or {}
                 mode = body.get("mode") or session.get("mode") or "coach"
+                model = body.get("model") or session.get("model") or None
+                if body.get("model"):
+                    memory.update_session(sid, model=body["model"])
 
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -298,7 +313,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
 
                 try:
-                    for event, data in stream_turn(sid, text, mode):
+                    for event, data in stream_turn(sid, text, mode, model):
                         self._sse(event, data)
                 except (BrokenPipeError, ConnectionResetError):
                     pass  # user hit stop
@@ -318,7 +333,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "no such session"}, 404)
         body = self._body()
         try:
-            memory.update_session(sid, title=body.get("title"), mode=body.get("mode"))
+            memory.update_session(sid, title=body.get("title"), mode=body.get("mode"), model=body.get("model"))
             return self._json({"ok": True})
         except Exception as exc:
             return self._json({"error": str(exc)}, 400)

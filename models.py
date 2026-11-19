@@ -92,7 +92,10 @@ def reachable(base_url: str | None = None, api_key: str | None = None) -> bool:
 def describe() -> dict:
     """Everything the GUI needs to render the model picker."""
     current = load()
-    models = list_models(current["base_url"], current["api_key"])
+    models = [
+        name for name in list_models(current["base_url"], current["api_key"])
+        if "embed" not in name.lower()
+    ]
     return {
         "base_url": current["base_url"],
         "model": current["model"],

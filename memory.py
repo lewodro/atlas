@@ -89,6 +89,9 @@ def _migrate() -> None:
             )
             """
         )
+        session_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+        if "model" not in session_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
         conn.execute(
             "INSERT OR IGNORE INTO sessions (id, title, mode) VALUES (?, ?, ?)",
             (CLI_SESSION, "terminal", "coach"),
@@ -99,7 +102,7 @@ def list_sessions() -> list[dict]:
     with _conn() as conn:
         rows = conn.execute(
             """
-            SELECT s.id, s.title, s.mode, s.created, s.updated,
+            SELECT s.id, s.title, s.mode, s.created, s.updated, s.model,
                    (SELECT COUNT(*) FROM turns t
                      WHERE t.session_id = s.id AND t.role IN ('user','assistant')) AS n
             FROM sessions s
@@ -107,26 +110,43 @@ def list_sessions() -> list[dict]:
             """
         ).fetchall()
     return [
-        {"id": r[0], "title": r[1], "mode": r[2], "created": r[3], "updated": r[4], "turns": r[5]}
+        {
+            "id": r[0], "title": r[1], "mode": r[2], "created": r[3],
+            "updated": r[4], "model": r[5], "turns": r[6],
+        }
         for r in rows
     ]
 
 
-def create_session(mode: str = "coach", title: str = "new chat") -> str:
+def get_session(session_id: str) -> dict | None:
+    return next((s for s in list_sessions() if s["id"] == session_id), None)
+
+
+def create_session(
+    mode: str = "coach", title: str = "new chat", model: str | None = None
+) -> str:
     sid = dt.datetime.now().strftime("%y%m%d-%H%M%S-") + os.urandom(2).hex()
     with _conn() as conn:
         conn.execute(
-            "INSERT INTO sessions (id, title, mode) VALUES (?, ?, ?)", (sid, title, mode)
+            "INSERT INTO sessions (id, title, mode, model) VALUES (?, ?, ?, ?)",
+            (sid, title, mode, model),
         )
     return sid
 
 
-def update_session(session_id: str, title: str | None = None, mode: str | None = None) -> None:
+def update_session(
+    session_id: str,
+    title: str | None = None,
+    mode: str | None = None,
+    model: str | None = None,
+) -> None:
     with _conn() as conn:
         if title is not None:
             conn.execute("UPDATE sessions SET title = ? WHERE id = ?", (title[:80], session_id))
         if mode is not None:
             conn.execute("UPDATE sessions SET mode = ? WHERE id = ?", (mode, session_id))
+        if model is not None:
+            conn.execute("UPDATE sessions SET model = ? WHERE id = ?", (model or None, session_id))
         conn.execute("UPDATE sessions SET updated = datetime('now') WHERE id = ?", (session_id,))
 
 
