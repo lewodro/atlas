@@ -28,6 +28,7 @@ case "${1:-}" in
   sleep)  shift; exec uv run python consolidate.py "$@" ;;
   eval)   shift; exec uv run python eval/run_eval.py "$@" ;;
   bench)  shift; exec uv run python bench.py "$@" ;;
+  models) shift; exec uv run python models.py "$@" ;;
   seed)   shift; exec uv run python seed.py "$@" ;;
   --once) shift; exec uv run python main.py --once "$@" ;;
   coach|tutor|review|debug|plan) exec uv run python main.py --mode "$@" ;;
