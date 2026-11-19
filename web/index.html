@@ -32,6 +32,8 @@
       <span id="mode-chip" class="chip">coach</span>
       <span class="spacer"></span>
       <select id="mode" title="mode"></select>
+      <select id="model-pick" title="model"></select>
+      <button id="settings" type="button" title="endpoint &amp; model">⚙</button>
       <span id="status" class="status"></span>
     </header>
 
@@ -45,6 +47,38 @@
   </main>
 
 </div>
+
+<dialog id="configure">
+  <form id="config-form">
+    <h2>your model</h2>
+    <p class="hint">Any OpenAI-compatible server: Ollama, LM Studio, llama.cpp,
+      vLLM, OpenRouter, or a GPU box on your LAN. Saved to data/settings.json.</p>
+
+    <label>endpoint
+      <input id="cfg-url" placeholder="http://127.0.0.1:11434/v1" spellcheck="false" />
+    </label>
+    <label>api key <span class="opt">optional for local servers</span>
+      <input id="cfg-key" type="password" placeholder="sk-…" spellcheck="false" />
+    </label>
+    <label>model
+      <input id="cfg-model" list="cfg-models" placeholder="qwen2.5:3b" spellcheck="false" />
+      <datalist id="cfg-models"></datalist>
+    </label>
+
+    <label>download <span class="opt">Ollama only</span>
+      <span class="row">
+        <input id="cfg-pull" placeholder="qwen2.5:7b" spellcheck="false" />
+        <button type="button" id="cfg-pull-btn">pull</button>
+      </span>
+    </label>
+
+    <p class="hint" id="cfg-status"></p>
+    <menu>
+      <button type="button" id="cfg-cancel">cancel</button>
+      <button type="submit" id="cfg-save">save</button>
+    </menu>
+  </form>
+</dialog>
 <script src="/app.js"></script>
 </body>
 </html>

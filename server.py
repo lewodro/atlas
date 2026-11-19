@@ -292,6 +292,33 @@ class Handler(BaseHTTPRequestHandler):
                 sid = memory.create_session(mode=mode, model=body.get("model"))
                 return self._json({"id": sid}, 201)
 
+            if path == "/api/models/pull":
+                name = (body.get("model") or "").strip()
+                if not name:
+                    return self._json({"error": "which model?"}, 400)
+
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                try:
+                    for event in models.pull(name):
+                        if event.get("error"):
+                            self._sse("error", {"message": event["error"]})
+                            return
+                        self._sse("pull", {
+                            "status": event.get("status", ""),
+                            "completed": event.get("completed") or 0,
+                            "total": event.get("total") or 0,
+                        })
+                    self._sse("done", {"model": name, "models": models.describe()["models"]})
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                except Exception as exc:
+                    self._sse("error", {"message": str(exc)})
+                return
+
             if path == "/api/chat":
                 sid = body.get("session_id") or ""
                 text = (body.get("message") or "").strip()

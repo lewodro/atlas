@@ -7,6 +7,9 @@ const state = {
   current: null,
   mode: "coach",
   modes: [],
+  models: [],
+  defaultModel: "",
+  baseUrl: "",
   sending: false,
   controller: null,
   filter: "",
@@ -164,10 +167,30 @@ async function refreshStats() {
   renderStats(await api("/api/stats"));
 }
 
+function renderModels(info) {
+  state.models = info.models || [];
+  state.defaultModel = info.model || "";
+  state.baseUrl = info.base_url || "";
+
+  const select = $("#model-pick");
+  const chosen = select.value;
+  select.innerHTML =
+    `<option value="">default · ${esc(state.defaultModel)}</option>` +
+    state.models.map((m) => `<option>${esc(m)}</option>`).join("");
+  if (state.models.includes(chosen)) select.value = chosen;
+
+  const list = $("#cfg-models");
+  if (list) list.innerHTML = state.models.map((m) => `<option>${esc(m)}</option>`).join("");
+}
+
+async function refreshModels() {
+  renderModels(await api("/api/models"));
+}
+
 async function newChat() {
   const { id } = await api("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ mode: state.mode }),
+    body: JSON.stringify({ mode: state.mode, model: $("#model-pick").value || undefined }),
   });
   await refreshSessions();
   await openSession(id);
@@ -181,6 +204,7 @@ async function openSession(id) {
   $("#title").textContent = session.title;
   $("#mode-chip").textContent = session.mode;
   $("#mode").value = session.mode;
+  $("#model-pick").value = session.model || "";
 
   const box = $("#messages");
   box.innerHTML = "";
@@ -292,21 +316,26 @@ async function send(text) {
   }
 }
 
-function handleEvent(block, reply) {
-  let event = "message";
+function parseEvent(block) {
+  let name = "message";
   let data = "";
   for (const line of block.split("\n")) {
-    if (line.startsWith("event:")) event = line.slice(6).trim();
+    if (line.startsWith("event:")) name = line.slice(6).trim();
     else if (line.startsWith("data:")) data += line.slice(5).trim();
   }
-  if (!data) return;
-
-  let payload;
+  if (!data) return null;
   try {
-    payload = JSON.parse(data);
+    return { name, data: JSON.parse(data) };
   } catch {
-    return;
+    return null;
   }
+}
+
+function handleEvent(block, reply) {
+  const parsed = parseEvent(block);
+  if (!parsed) return;
+  const event = parsed.name;
+  const payload = parsed.data;
 
   if (event === "delta") {
     reply.text += payload.text;
@@ -372,6 +401,104 @@ $("#mode").onchange = async (e) => {
   }
 };
 
+$("#model-pick").onchange = async (e) => {
+  const model = e.target.value || "";
+  if (!state.current) return;
+  await api(`/api/sessions/${state.current}`, {
+    method: "PATCH",
+    body: JSON.stringify({ model }),
+  });
+  await refreshSessions();
+};
+
+/* ---------------------------------------------------------------- settings */
+
+const dlg = $("#configure");
+
+$("#settings").onclick = async () => {
+  const info = await api("/api/models");
+  renderModels(info);
+  $("#cfg-url").value = info.base_url;
+  $("#cfg-model").value = info.model;
+  $("#cfg-key").value = "";
+  $("#cfg-status").textContent = info.reachable
+    ? `${info.models.length} model${info.models.length === 1 ? "" : "s"} found`
+    : "not reachable — check the endpoint";
+  dlg.showModal();
+};
+
+$("#cfg-cancel").onclick = () => dlg.close();
+
+$("#cfg-pull-btn").onclick = async () => {
+  const name = $("#cfg-pull").value.trim();
+  if (!name) return;
+  const status = $("#cfg-status");
+  const button = $("#cfg-pull-btn");
+  button.disabled = true;
+  status.textContent = `pulling ${name}…`;
+
+  try {
+    const res = await fetch("/api/models/pull", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: name }),
+    });
+    if (!res.ok || !res.body) throw new Error(`http ${res.status}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const event = parseEvent(block);
+        if (!event) continue;
+        if (event.name === "pull") {
+          const d = event.data;
+          const pct = d.total ? ` ${Math.round((100 * d.completed) / d.total)}%` : "";
+          status.textContent = `${d.status}${pct}`;
+        } else if (event.name === "error") {
+          status.textContent = event.data.message;
+        } else if (event.name === "done") {
+          status.textContent = `${event.data.model} installed`;
+          renderModels({ ...event.data, base_url: $("#cfg-url").value });
+          $("#cfg-model").value = event.data.model;
+        }
+      }
+    }
+  } catch (err) {
+    status.textContent = err.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+
+$("#config-form").onsubmit = async (e) => {
+  e.preventDefault();
+  $("#cfg-status").textContent = "saving…";
+  try {
+    await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        base_url: $("#cfg-url").value.trim(),
+        api_key: $("#cfg-key").value.trim(),
+        model: $("#cfg-model").value.trim(),
+      }),
+    });
+    await refreshModels();
+    await refreshStats();
+    dlg.close();
+  } catch (err) {
+    $("#cfg-status").textContent = err.message;
+  }
+};
+
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();
@@ -384,7 +511,9 @@ document.addEventListener("keydown", (e) => {
 (async function boot() {
   startLifecycle();
   await refreshStats();
+  await refreshModels();
   await refreshSessions();
   if (state.sessions.length) await openSession(state.sessions[0].id);
   else await newChat();
+  if (location.hash === "#settings") $("#settings").click();
 })();

@@ -85,6 +85,34 @@ def list_models(base_url: str | None = None, api_key: str | None = None) -> list
     return sorted({str(m.get("id")) for m in items if isinstance(m, dict) and m.get("id")})
 
 
+def _ollama_root(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    return base[:-3] if base.endswith("/v1") else base
+
+
+def pull(model: str, base_url: str | None = None):
+    """Download a model from the Ollama registry, yielding progress events.
+
+    Only Ollama implements /api/pull. LM Studio, vLLM and hosted APIs will
+    fail here — install the model their way instead.
+    """
+    base = _ollama_root(base_url or load()["base_url"])
+    request = urllib.request.Request(
+        f"{base}/api/pull",
+        data=json.dumps({"model": model, "stream": True}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=900) as response:
+        for line in response:
+            if not line.strip():
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
 def reachable(base_url: str | None = None, api_key: str | None = None) -> bool:
     return bool(list_models(base_url, api_key))
 
@@ -112,8 +140,23 @@ def main() -> None:
     parser.add_argument("--endpoint", help="OpenAI-compatible base URL, e.g. http://127.0.0.1:1234/v1")
     parser.add_argument("--api-key", dest="api_key", help="key for that endpoint (local ones ignore it)")
     parser.add_argument("--use", help="make this model id the default")
+    parser.add_argument("--pull", metavar="MODEL", help="download it with Ollama, then use it")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
+
+    if args.pull:
+        last = ""
+        try:
+            for event in pull(args.pull, args.endpoint):
+                status = event.get("status", "")
+                total, done = event.get("total") or 0, event.get("completed") or 0
+                line = f"{status} {100 * done // total}%" if total else status
+                if line != last:
+                    print(f"  {line}")
+                    last = line
+        except Exception as exc:
+            raise SystemExit(f"pull failed: {exc}")
+        args.use = args.use or args.pull
 
     if args.endpoint or args.api_key or args.use:
         save(**{k: v for k, v in vars(args).items() if k in FIELDS and v})
