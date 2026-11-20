@@ -156,14 +156,6 @@ svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; s
 .side-top { display: flex; flex-direction: column; gap: 12px; }
 
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; height: 30px; }
-.brand-mark {
-  display: grid; place-items: center;
-  width: 26px; height: 26px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: 8px;
-}
-.brand-mark svg { width: 17px; height: 17px; }
 .brand-name { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
 .brand .icon-btn { margin-left: auto; }
 
