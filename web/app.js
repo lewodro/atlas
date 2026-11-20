@@ -414,6 +414,39 @@ $("#model-pick").onchange = async (e) => {
 /* ---------------------------------------------------------------- settings */
 
 const dlg = $("#configure");
+let runtimeCache = { at: 0, list: [] };
+
+async function renderRuntimes() {
+  if (Date.now() - runtimeCache.at > 30000 || !runtimeCache.list.length) {
+    runtimeCache = { at: Date.now(), list: (await api("/api/runtimes")).runtimes };
+  }
+  $("#cfg-runtimes").innerHTML = runtimeCache.list.map((r, i) => `
+    <button type="button" class="runtime ${r.ok ? "" : "off"} ${r.active ? "active" : ""}"
+            data-runtime="${i}" title="${esc(r.base_url)}">
+      <b>${esc(r.name)}</b><small>${r.ok ? r.models.length + " models" : "offline"}</small>
+    </button>`).join("");
+
+  $("#cfg-runtimes").querySelectorAll("button").forEach((button) => {
+    button.onclick = async () => {
+      const r = runtimeCache.list[Number(button.dataset.runtime)];
+      const status = $("#cfg-status");
+      status.textContent = `connecting to ${r.name}…`;
+      try {
+        const info = await api(`/api/models?base_url=${encodeURIComponent(r.base_url)}`);
+        $("#cfg-url").value = r.base_url;
+        $("#cfg-key").value = "";
+        $("#cfg-models").innerHTML = info.models
+          .map((m) => `<option>${esc(m)}</option>`).join("");
+        if (info.models.length) $("#cfg-model").value = info.models[0];
+        status.textContent = r.ok
+          ? `${r.name}: ${info.models.length} available — pick one and save`
+          : `${r.name} is not running on ${r.base_url}`;
+      } catch (err) {
+        status.textContent = err.message;
+      }
+    };
+  });
+}
 
 $("#settings").onclick = async () => {
   const info = await api("/api/models");
@@ -424,6 +457,7 @@ $("#settings").onclick = async () => {
   $("#cfg-status").textContent = info.reachable
     ? `${info.models.length} model${info.models.length === 1 ? "" : "s"} found`
     : "not reachable — check the endpoint";
+  await renderRuntimes();
   dlg.showModal();
 };
 

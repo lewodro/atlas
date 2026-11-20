@@ -21,8 +21,10 @@ and win over .env, so the GUI can switch models without a restart:
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 import config
 
@@ -35,10 +37,39 @@ DEFAULTS = {
     "model": config.MODEL,
 }
 
+#: Local runtimes and their default OpenAI-compatible ports. Probed in
+#: parallel, so opening the GUI costs about one second even if none are up.
+RUNTIMES = [
+    ("Ollama", "http://127.0.0.1:11434/v1"),
+    ("LM Studio", "http://127.0.0.1:1234/v1"),
+    ("llama.cpp", "http://127.0.0.1:8080/v1"),
+    ("vLLM", "http://127.0.0.1:8000/v1"),
+]
+
+_AUTO: dict | None = None
+
+
+def _auto_pick() -> dict:
+    """First local runtime that answers, with its first chat model."""
+    for runtime in scan_runtimes():
+        if runtime["models"]:
+            return {
+                "base_url": runtime["base_url"],
+                "api_key": "",
+                "model": runtime["models"][0],
+            }
+    return {}
+
 
 def load() -> dict:
     """Saved settings over defaults. Missing or broken file = defaults."""
     data = dict(DEFAULTS)
+    if not SETTINGS.exists() and not os.getenv("ATLAS_MODEL") and not os.getenv("ATLAS_BASE_URL"):
+        global _AUTO
+        if _AUTO is None:
+            _AUTO = {}  # guard against re-entry while probing
+            _AUTO = _auto_pick()
+        data.update(_AUTO)
     if SETTINGS.exists():
         try:
             saved = json.loads(SETTINGS.read_text(encoding="utf-8"))
@@ -70,19 +101,59 @@ def _get(url: str, api_key: str, timeout: float = 4.0):
         return json.load(response)
 
 
-def list_models(base_url: str | None = None, api_key: str | None = None) -> list[str]:
+def list_models(
+    base_url: str | None = None, api_key: str | None = None, timeout: float = 4.0
+) -> list[str]:
     """Model ids from any OpenAI-compatible endpoint. Never raises."""
-    current = load()
-    base = (base_url or current["base_url"]).rstrip("/")
-    key = api_key or current["api_key"]
+    if base_url is not None and api_key is not None:
+        base, key = base_url.rstrip("/"), api_key
+    else:
+        current = load()
+        base = (base_url or current["base_url"]).rstrip("/")
+        key = api_key if api_key is not None else current["api_key"]
     try:
-        payload = _get(f"{base}/models", key)
+        payload = _get(f"{base}/models", key, timeout=timeout)
     except (urllib.error.URLError, OSError, ValueError, TimeoutError):
         return []
     items = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(items, list):
         return []
-    return sorted({str(m.get("id")) for m in items if isinstance(m, dict) and m.get("id")})
+    ids = {
+        str(m.get("id")) for m in items
+        if isinstance(m, dict) and m.get("id") and "embed" not in str(m["id"]).lower()
+    }
+
+    def rank(name: str):
+        name = name.lower()
+        score = 0
+        if name.startswith(("qwen", "llama", "gemma", "mistral", "deepseek", "phi")):
+            score += 3
+        if "abliterated" in name or "test" in name:
+            score -= 3
+        if name.endswith(":latest"):
+            score -= 1
+        return (-score, name)
+
+    return sorted(ids, key=rank)
+
+
+def scan_runtimes(timeout: float = 1.2) -> list[dict]:
+    """Probe the usual local ports in parallel: Ollama, LM Studio, etc."""
+    def probe(item: tuple[str, str]) -> dict:
+        name, base = item
+        return {
+            "name": name,
+            "base_url": base,
+            "models": list_models(base, "", timeout=timeout),
+        }
+
+    with ThreadPoolExecutor(max_workers=len(RUNTIMES)) as pool:
+        found = list(pool.map(probe, RUNTIMES))
+    current = load()["base_url"]
+    for runtime in found:
+        runtime["ok"] = bool(runtime["models"])
+        runtime["active"] = runtime["base_url"].rstrip("/") == current.rstrip("/")
+    return found
 
 
 def _ollama_root(base_url: str) -> str:
@@ -140,9 +211,18 @@ def main() -> None:
     parser.add_argument("--endpoint", help="OpenAI-compatible base URL, e.g. http://127.0.0.1:1234/v1")
     parser.add_argument("--api-key", dest="api_key", help="key for that endpoint (local ones ignore it)")
     parser.add_argument("--use", help="make this model id the default")
+    parser.add_argument("--runtime", help="use a detected runtime: ollama|lmstudio|llamacpp|vllm")
     parser.add_argument("--pull", metavar="MODEL", help="download it with Ollama, then use it")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
+
+    if args.runtime:
+        match = next((r for r in RUNTIMES if args.runtime.lower() in r[0].lower().replace(" ", "")), None)
+        if not match:
+            raise SystemExit(f"unknown runtime {args.runtime!r}; try: " + ", ".join(
+                name.lower().replace(" ", "") for name, _ in RUNTIMES
+            ))
+        args.endpoint = match[1]
 
     if args.pull:
         last = ""
@@ -165,8 +245,14 @@ def main() -> None:
 
     info = describe()
     if args.json:
-        print(json.dumps(info, indent=2))
+        print(json.dumps({**info, "runtimes": scan_runtimes()}, indent=2))
         return
+
+    print("\ndetected")
+    for runtime in scan_runtimes():
+        mark = "*" if runtime["active"] else " "
+        status = ", ".join(runtime["models"][:3]) if runtime["ok"] else "offline"
+        print(f"  {mark} {runtime['name']:10} {runtime['base_url']:30} {status}")
 
     print(f"\n{info['base_url']}")
     if not info["models"]:

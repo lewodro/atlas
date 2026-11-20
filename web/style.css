@@ -448,3 +448,25 @@ dialog#configure::backdrop { background: rgba(3, 7, 11, 0.72); }
 }
 
 #cfg-pull-btn:disabled { opacity: 0.5; cursor: progress; }
+
+#config-form .runtimes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.runtime {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 7px;
+  font-size: 11px;
+  color: var(--fg);
+  border-color: var(--line);
+}
+
+.runtime small { color: var(--faint); font-size: 10px; }
+.runtime.active { border-color: var(--accent); }
+.runtime.active b { color: var(--accent); }
+.runtime.off { opacity: 0.45; }

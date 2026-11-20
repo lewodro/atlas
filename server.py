@@ -29,7 +29,7 @@ import webbrowser
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import activity
 import librarian
@@ -248,7 +248,21 @@ class Handler(BaseHTTPRequestHandler):
                     "modes": list(modes.MODES),
                 })
             if path == "/api/models":
+                query = parse_qs(urlparse(self.path).query)
+                other = (query.get("base_url") or [None])[0]
+                if other:
+                    return self._json({
+                        "base_url": other,
+                        "model": models.load()["model"],
+                        "models": models.list_models(other, ""),
+                        "reachable": bool(models.list_models(other, "")),
+                    })
                 return self._json(models.describe())
+            if path == "/api/runtimes":
+                return self._json({
+                    "runtimes": models.scan_runtimes(),
+                    "current": models.load()["base_url"],
+                })
             if path == "/api/sessions":
                 return self._json({"sessions": memory.list_sessions()})
             if path.startswith("/api/sessions/"):

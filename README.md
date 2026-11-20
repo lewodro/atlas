@@ -118,7 +118,9 @@ uv run python eval/run_eval.py  # 5/5 = memory works
 
 ## Web UI
 
-Same harness, same memory, saved sessions. Browser optional.
+Same harness, same memory, saved sessions. Browser optional. On first launch
+Atlas finds your running Ollama, LM Studio, llama.cpp or vLLM server by itself
+— click ⚙ to switch runtimes and models without editing files.
 
 ```bash
 uv run python server.py     # http://localhost:7777
@@ -241,8 +243,9 @@ Atlas talks to anything that speaks the OpenAI chat-completions API: Ollama,
 LM Studio, llama.cpp, vLLM, OpenRouter, or a GPU box on your LAN.
 
 ```bash
-atlas models                                  # what is installed
-atlas models --use qwen2.5:7b                 # switch the default
+atlas models                                  # detected runtimes + installed models
+atlas models --runtime lmstudio               # point at LM Studio's default port
+atlas use qwen2.5:7b                          # switch the default
 atlas models --endpoint http://127.0.0.1:1234/v1 --use local-model
 atlas models --pull qwen2.5:7b                # download with Ollama
 ```

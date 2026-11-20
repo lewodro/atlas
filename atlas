@@ -30,6 +30,7 @@ case "${1:-}" in
   bench)  shift; exec uv run python bench.py "$@" ;;
   test)   shift; exec uv run python -m unittest discover -s tests "$@" ;;
   models) shift; exec uv run python models.py "$@" ;;
+  use)    shift; exec uv run python models.py --use "$@" ;;
   seed)   shift; exec uv run python seed.py "$@" ;;
   --once) shift; exec uv run python main.py --once "$@" ;;
   coach|tutor|review|debug|plan) exec uv run python main.py --mode "$@" ;;
