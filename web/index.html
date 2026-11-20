@@ -4,14 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Atlas</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0e12'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%2322d3a6' stroke-width='2'/%3E%3Cpath d='M11 21 16 10l5 11M13 17h6' stroke='%2322d3a6' stroke-width='2' fill='none'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:," />
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body data-view="chat">
 
 <!-- one icon set, one stroke language -->
 <svg class="sprite" aria-hidden="true">
-  <symbol id="i-atlas" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2"/><path d="M7.5 15.2 12 5.8l4.5 9.4M9.1 12.7h5.8"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4 4"/></symbol>
   <symbol id="i-tools" viewBox="0 0 24 24"><path d="M14.7 6.3a4.2 4.2 0 0 0-5.2 5.2L4.8 16.2a2 2 0 0 0 2.8 2.8l4.7-4.7a4.2 4.2 0 0 0 5.2-5.2l-2.6 2.6-2.6-.5-.5-2.6 2.9-2.3Z"/></symbol>
@@ -44,8 +43,7 @@
   <aside id="sidebar">
     <div class="side-top">
       <div class="brand">
-        <span class="brand-mark"><svg><use href="#i-atlas"/></svg></span>
-        <span class="brand-name">atlas</span>
+        <span class="brand-name">ATLAS</span>
         <button id="collapse" class="icon-btn" title="collapse sidebar"><svg><use href="#i-menu"/></svg></button>
       </div>
 
@@ -60,6 +58,7 @@
     <nav class="primary-nav" aria-label="workspace">
       <button class="nav-item" data-view="tools"><svg><use href="#i-tools"/></svg><span>Tools</span><em id="tools-badge">4</em></button>
       <button class="nav-item" data-view="artifacts"><svg><use href="#i-artifacts"/></svg><span>Artifacts</span></button>
+      <button class="nav-item" data-view="usage"><svg><use href="#i-pulse"/></svg><span>Usage</span></button>
       <button class="nav-item" data-view="memory"><svg><use href="#i-memory"/></svg><span>Memory</span></button>
     </nav>
 
@@ -90,6 +89,15 @@
 
       <div class="top-actions">
         <div class="activity" title="Inference location"><svg><use href="#i-pulse"/></svg><span id="activity-label">Local</span></div>
+
+        <div class="select theme-select" id="theme-select">
+          <button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false" title="Theme">
+            <span class="select-value">Atlas</span><svg class="chev"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="select-menu" role="listbox" hidden></div>
+        </div>
+
+        <button class="icon-btn" id="usage-toggle" title="Usage panel"><svg><use href="#i-pulse"/></svg></button>
 
         <div class="select mode-select" id="mode-select">
           <button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false">
@@ -161,39 +169,78 @@
   </main>
 </div>
 
+<div id="usage-panel" class="usage-panel right" hidden>
+  <div class="up-head">
+    <span>Usage</span>
+    <span class="up-actions">
+      <button id="usage-dock" class="icon-btn" title="Change panel position"><svg><use href="#i-artifacts"/></svg></button>
+      <button id="usage-close" class="icon-btn" title="Close"><svg><use href="#i-close"/></svg></button>
+    </span>
+  </div>
+  <div id="usage-panel-body"></div>
+</div>
+
 <dialog id="configure">
-  <form id="config-form">
-    <div class="dialog-head">
-      <div><h2>Model &amp; runtime</h2><p>Choose where Atlas thinks. Saved locally, no restart.</p></div>
-      <button type="button" class="icon-btn" id="cfg-cancel"><svg><use href="#i-close"/></svg></button>
-    </div>
+  <div class="settings-shell">
+    <aside class="settings-tabs">
+      <button type="button" data-tab="appearance" class="active">Appearance</button>
+      <button type="button" data-tab="models">Models</button>
+      <button type="button" data-tab="tools">Tools</button>
+      <button type="button" data-tab="memory">Memory</button>
+    </aside>
 
-    <div class="detected">
-      <div class="field-label">Detected runtimes</div>
-      <div id="cfg-runtimes" class="runtimes"></div>
-    </div>
+    <form id="config-form" class="settings-main">
+      <div class="dialog-head">
+        <div><h2>Settings</h2><p>Atlas stays local. Changes are saved on this machine.</p></div>
+        <button type="button" class="icon-btn" id="cfg-cancel"><svg><use href="#i-close"/></svg></button>
+      </div>
 
-    <label class="field"><span class="field-label">Endpoint</span>
-      <input id="cfg-url" placeholder="http://127.0.0.1:11434/v1" spellcheck="false" />
-    </label>
-    <label class="field"><span class="field-label">API key <em>optional for local servers</em></span>
-      <input id="cfg-key" type="password" placeholder="sk-…" spellcheck="false" />
-    </label>
-    <label class="field"><span class="field-label">Model</span>
-      <input id="cfg-model" placeholder="qwen2.5:3b" spellcheck="false" />
-    </label>
+      <section class="settings-panel" data-panel="appearance">
+        <div class="field-label">Theme</div>
+        <div id="theme-choices" class="theme-choices"></div>
 
-    <div class="pull-row">
-      <input id="cfg-pull" placeholder="Download a model with Ollama, e.g. qwen2.5:7b" spellcheck="false" />
-      <button type="button" id="cfg-pull-btn">Pull</button>
-    </div>
-    <p class="status-line" id="cfg-status"></p>
+        <div class="field-label spaced">Accent</div>
+        <div id="accent-choices" class="accent-choices"></div>
+        <p class="status-line">Accent overrides the theme accent until you choose another theme.</p>
+      </section>
 
-    <menu>
-      <button type="button" id="cfg-dismiss">Cancel</button>
-      <button type="submit" id="cfg-save">Save changes</button>
-    </menu>
-  </form>
+      <section class="settings-panel" data-panel="models" hidden>
+        <div class="field-label">Detected runtimes</div>
+        <div id="cfg-runtimes" class="runtimes"></div>
+
+        <label class="field"><span class="field-label">Endpoint</span>
+          <input id="cfg-url" placeholder="http://127.0.0.1:11434/v1" spellcheck="false" />
+        </label>
+        <label class="field"><span class="field-label">API key <em>optional for local servers</em></span>
+          <input id="cfg-key" type="password" placeholder="sk-…" spellcheck="false" />
+        </label>
+        <label class="field"><span class="field-label">Model</span>
+          <input id="cfg-model" placeholder="qwen2.5:3b" spellcheck="false" />
+        </label>
+
+        <div class="pull-row">
+          <input id="cfg-pull" placeholder="Download a model with Ollama, e.g. qwen2.5:7b" spellcheck="false" />
+          <button type="button" id="cfg-pull-btn">Pull</button>
+        </div>
+        <p class="status-line" id="cfg-status"></p>
+      </section>
+
+      <section class="settings-panel" data-panel="tools" hidden>
+        <p class="panel-copy">Tools are capabilities Atlas can use. Most are UI-ready but not implemented yet.</p>
+        <div id="settings-tools" class="settings-list"></div>
+      </section>
+
+      <section class="settings-panel" data-panel="memory" hidden>
+        <p class="panel-copy">Memory holds durable context about you. Review, add, correct or forget facts in the Memory page.</p>
+        <button type="button" id="settings-open-memory" class="text-btn">Open Memory</button>
+      </section>
+
+      <menu>
+        <button type="button" id="cfg-dismiss">Close</button>
+        <button type="submit" id="cfg-save">Save model settings</button>
+      </menu>
+    </form>
+  </div>
 </dialog>
 
 <script src="/app.js"></script>

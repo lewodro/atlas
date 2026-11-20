@@ -3,6 +3,13 @@
 const $ = (s) => document.querySelector(s);
 const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
 
+const saved = (key, fallback) => {
+  try { return localStorage.getItem(`atlas.${key}`) ?? fallback; } catch { return fallback; }
+};
+const rememberLocal = (key, value) => {
+  try { localStorage.setItem(`atlas.${key}`, String(value)); } catch { /* private mode */ }
+};
+
 const state = {
   sessions: [],
   current: null,
@@ -21,6 +28,11 @@ const state = {
   memories: [],
   categories: [],
   view: "chat",
+  stats: null,
+  theme: "atlas",
+  accent: "",
+  usageOpen: false,
+  usagePos: "right",
 };
 
 /* lifecycle lease (the server stops itself when the last tab closes) */
@@ -177,6 +189,7 @@ function setView(name) {
     tools: ["Tools", "Capabilities available to Atlas on this machine."],
     artifacts: ["Artifacts", "Files and outputs Atlas creates or works on."],
     memory: ["Memory", "What Atlas remembers about you, in plain language."],
+    usage: ["Usage", "What Atlas has actually done on this machine."],
   };
   if (titles[name]) {
     $("#workspace-title").textContent = titles[name][0];
@@ -190,6 +203,7 @@ function setView(name) {
   if (name === "tools") renderTools();
   if (name === "artifacts") renderArtifacts();
   if (name === "memory") refreshMemories();
+  if (name === "usage") renderUsage();
   $("#sidebar").classList.remove("open");
 }
 
@@ -235,7 +249,6 @@ function renderSessions() {
 function welcome() {
   const name = state.profileName.split(" ")[0] || "there";
   return `<div class="welcome">
-    <div class="mark">${icon("atlas")}</div>
     <h2>Hello, ${esc(name)}</h2>
     <p>What are we working on?</p>
     <div class="suggestions">
@@ -316,15 +329,20 @@ function scrollDown() {
 async function refreshSessions() {
   state.sessions = (await api("/api/sessions")).sessions;
   renderSessions();
+  if (state.view === "usage") renderUsage();
+  if (state.usageOpen) renderUsagePanel();
 }
 
 async function refreshStats() {
   const data = await api("/api/stats");
+  state.stats = data;
   state.modes = data.modes || [];
   selects.mode?.setOptions(state.modes.map((m) => ({ value: m, label: friendlyMode(m) })));
   selects.mode?.setValue(state.mode);
   $("#activity-label").textContent = data.frontier ? "Frontier" : "Local";
   $("#runtime-label").textContent = data.where ? data.where.split(" @ ")[0] : "Local runtime";
+  renderUsagePanel();
+  if (state.view === "usage") renderUsage();
   return data;
 }
 
@@ -655,10 +673,188 @@ function renderArtifacts() {
   renderArtifactList(artifacts);
 }
 
+/* ------------------------------------------------------- theme + usage */
+
+const THEMES = [
+  { id: "atlas", label: "Atlas", note: "near-black · cyan" },
+  { id: "midnight", label: "Midnight", note: "pitch black · deep blue" },
+  { id: "mono", label: "Mono", note: "black · white/gray" },
+  { id: "forest", label: "Forest", note: "black · muted green" },
+];
+
+const ACCENTS = [
+  { label: "Cyan", value: "#22d3a6" },
+  { label: "Blue", value: "#5b8cff" },
+  { label: "Green", value: "#5fbf87" },
+  { label: "White", value: "#e8e8e8" },
+];
+
+function paintThemeChoices() {
+  $("#theme-choices").innerHTML = THEMES.map((t) => `
+    <button type="button" class="theme-card ${t.id === state.theme ? "active" : ""}" data-theme="${t.id}">
+      <span class="preview"></span><span><b>${esc(t.label)}</b><br><small>${esc(t.note)}</small></span>
+    </button>`).join("");
+  $("#theme-choices").querySelectorAll("button").forEach((button) => {
+    button.onclick = () => applyTheme(button.dataset.theme, "");
+  });
+
+  $("#accent-choices").innerHTML = ACCENTS.map((a) => `
+    <button type="button" class="accent-dot ${a.value === state.accent ? "active" : ""}"
+            data-accent="${a.value}" style="--dot:${a.value}"><i></i>${esc(a.label)}</button>`).join("");
+  $("#accent-choices").querySelectorAll("button").forEach((button) => {
+    button.onclick = () => applyTheme(state.theme, button.dataset.accent);
+  });
+}
+
+function applyTheme(id, accent = "") {
+  state.theme = id;
+  state.accent = accent;
+  document.documentElement.dataset.theme = id;
+  if (accent) document.documentElement.style.setProperty("--accent", accent);
+  else document.documentElement.style.removeProperty("--accent");
+  rememberLocal("theme", id);
+  rememberLocal("accent", accent);
+  selects.theme?.setValue(id);
+  paintThemeChoices();
+}
+
+/* usage is derived only from real API data */
+const BLOCKS = "▁▂▃▄▅▆▇█";
+function sparkline(values) {
+  const peak = Math.max(1, ...values);
+  return values.map((v) => BLOCKS[Math.round((v / peak) * (BLOCKS.length - 1))]).join("");
+}
+function miniRow(label, count, peak) {
+  const width = 11;
+  const filled = Math.round((count / Math.max(1, peak)) * width);
+  return `<div class="mini-row"><span class="label">${esc(label)}</span>
+    <span class="track"><b>${"█".repeat(filled)}</b>${"░".repeat(width - filled)}</span>
+    <span class="count">${count}</span></div>`;
+}
+
+async function usageFacts() {
+  const stats = state.stats || await api("/api/stats");
+  const sessions = state.sessions.length ? state.sessions : (await api("/api/sessions")).sessions;
+  const memories = state.memories.length ? state.memories : (await api("/api/memories")).memories;
+  return { stats, sessions, memories };
+}
+
+function usageSummary(facts) {
+  const { stats, sessions, memories } = facts;
+  return [
+    ["Model", friendlyModel(stats.model || state.defaultModel)],
+    ["Runtime", stats.where || "not detected"],
+    ["Chats", String(sessions.length)],
+    ["Turns", String(stats.turns ?? "—")],
+    ["Memories", String(memories.length)],
+  ];
+}
+
+async function renderUsage() {
+  const facts = await usageFacts();
+  const { sessions, memories } = facts;
+
+  const days = Array(7).fill(0);
+  sessions.forEach((row) => {
+    const then = new Date(String(row.updated).replace(" ", "T") + "Z").getTime();
+    const index = 6 - Math.floor((Date.now() - then) / 86400000);
+    if (index >= 0 && index < 7) days[index] += 1;
+  });
+
+  const byModel = {};
+  sessions.forEach((row) => {
+    const key = row.model || state.defaultModel || "default";
+    byModel[key] = (byModel[key] || 0) + 1;
+  });
+  const byCategory = {};
+  memories.forEach((row) => {
+    byCategory[row.category] = (byCategory[row.category] || 0) + 1;
+  });
+
+  const modelPeak = Math.max(1, ...Object.values(byModel));
+  const catPeak = Math.max(1, ...Object.values(byCategory));
+
+  $("#workspace-body").innerHTML = `
+    <div class="usage-grid">
+      <section class="usage-card">
+        <h3>At a glance</h3>
+        ${usageSummary(facts).map(([k, v]) => `<div class="up-row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("")}
+      </section>
+      <section class="usage-card">
+        <h3>Chats by day</h3>
+        <div class="spark">${sparkline(days)}</div>
+        <p class="unavailable">last 7 days · by chat, not tokens</p>
+        <h3 style="margin-top:18px">Model usage</h3>
+        ${Object.entries(byModel).sort((a, b) => b[1] - a[1]).slice(0, 6)
+          .map(([m, n]) => miniRow(friendlyModel(m), n, modelPeak)).join("") || '<p class="unavailable">no chats yet</p>'}
+      </section>
+      <section class="usage-card">
+        <h3>Memory categories</h3>
+        ${Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 7)
+          .map(([c, n]) => miniRow(c, n, catPeak)).join("") || '<p class="unavailable">no memories yet</p>'}
+      </section>
+      <section class="usage-card">
+        <h3>Not instrumented</h3>
+        <p class="unavailable">Tokens, tokens/s, prompt tokens, session duration, tool calls and generated artifacts are not exposed by the current runtime. No numbers are guessed.</p>
+      </section>
+    </div>`;
+}
+
+function renderUsagePanel() {
+  const panel = $("#usage-panel");
+  if (!state.stats || !panel) return;
+  panel.className = `usage-panel ${state.usagePos}`;
+  panel.hidden = !state.usageOpen;
+  const rows = usageSummary({
+    stats: state.stats,
+    sessions: state.sessions,
+    memories: state.memories,
+  });
+  $("#usage-panel-body").innerHTML = rows.map(([k, v], i) => `
+    <div class="up-row"><span>${esc(k)}</span><span class="${i === 0 ? "accent" : ""}">${esc(v)}</span></div>`).join("");
+}
+
+function toggleUsagePanel(force) {
+  state.usageOpen = force ?? !state.usageOpen;
+  rememberLocal("usageOpen", state.usageOpen);
+  renderUsagePanel();
+  if (state.usageOpen) refreshMemories().then(renderUsagePanel).catch(() => {});
+}
+
+function cycleUsageDock() {
+  const order = ["right", "bottom-right", "docked"];
+  state.usagePos = order[(order.indexOf(state.usagePos) + 1) % order.length];
+  rememberLocal("usagePos", state.usagePos);
+  renderUsagePanel();
+}
+
 /* ------------------------------------------------------------- settings */
 
 const dlg = $("#configure");
 let runtimeCache = { at: 0, list: [] };
+
+function selectSettingsTab(name) {
+  document.querySelectorAll(".settings-tabs button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".settings-panel").forEach((p) =>
+    p.hidden = p.dataset.panel !== name);
+  $("#cfg-save").hidden = name !== "models";
+}
+
+document.querySelectorAll(".settings-tabs button").forEach((button) => {
+  button.onclick = () => {
+    selectSettingsTab(button.dataset.tab);
+    if (button.dataset.tab === "tools") {
+      $("#settings-tools").innerHTML = TOOL_CATALOG.map((t) =>
+        `<span class="${t.available ? "on" : ""}">${esc(t.name)} · ${t.available ? "available" : "not configured"}</span>`).join("");
+    }
+  };
+});
+
+$("#settings-open-memory").onclick = () => { dlg.close(); setView("memory"); };
+$("#usage-toggle").onclick = () => toggleUsagePanel();
+$("#usage-close").onclick = () => toggleUsagePanel(false);
+$("#usage-dock").onclick = cycleUsageDock;
 
 async function renderRuntimes() {
   if (Date.now() - runtimeCache.at > 30000 || !runtimeCache.list.length) {
@@ -688,6 +884,7 @@ async function renderRuntimes() {
 }
 
 async function openSettings() {
+  selectSettingsTab("appearance");
   const info = await api("/api/models");
   $("#cfg-url").value = info.base_url || "";
   $("#cfg-model").value = info.model || "";
@@ -796,6 +993,16 @@ document.addEventListener("keydown", (e) => {
 (async function boot() {
   startLease();
 
+  selects.theme = makeSelect($("#theme-select"), {
+    placeholder: "Atlas",
+    onChange: (id) => applyTheme(id, ""),
+  });
+  selects.theme.setOptions(THEMES.map((t) => ({ value: t.id, label: t.label })));
+  state.usagePos = saved("usagePos", "right");
+  state.usageOpen = saved("usageOpen", "false") === "true";
+  const savedTheme = saved("theme", "atlas");
+  applyTheme(THEMES.some((t) => t.id === savedTheme) ? savedTheme : "atlas", saved("accent", ""));
+
   selects.mode = makeSelect($("#mode-select"), {
     placeholder: "Coach",
     onChange: async (mode) => {
@@ -862,6 +1069,7 @@ document.addEventListener("keydown", (e) => {
   if (state.sessions.length) await openSession(state.sessions[0].id);
   else await newChat();
 
+  if (state.usageOpen) refreshMemories().then(renderUsagePanel).catch(() => {});
   if (location.hash === "#new") newChat();
   const testMenu = new URLSearchParams(location.search).get("menu");
   if (testMenu === "model" || location.hash === "#model-menu") selects.model.open();
@@ -870,5 +1078,6 @@ document.addEventListener("keydown", (e) => {
   if (location.hash === "#settings") openSettings();
   if (location.hash === "#tools") setView("tools");
   if (location.hash === "#artifacts") setView("artifacts");
+  if (location.hash === "#usage") setView("usage");
   if (location.hash === "#memory") setView("memory");
 })();
