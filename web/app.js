@@ -33,6 +33,7 @@ const state = {
   accent: "",
   usageOpen: false,
   usagePos: "right",
+  tools: [],
 };
 
 /* lifecycle lease (the server stops itself when the last tab closes) */
@@ -298,7 +299,7 @@ function toolLine(name, result) {
   const el = document.createElement("details");
   el.className = "tool-call";
   el.innerHTML = `
-    <summary><span class="pulse"></span><span>${esc(TOOL_LABELS[name] || `Used ${name}`)}</span>${icon("chevron")}</summary>
+    <summary><span class="pulse"></span><span>${esc(TOOL_LABELS_EXTRA[name] || TOOL_LABELS[name] || `Used ${name}`)}</span>${icon("chevron")}</summary>
     <pre>${esc(result)}</pre>`;
   $("#messages").appendChild(el);
   scrollDown();
@@ -308,6 +309,12 @@ const CATEGORY_LABELS = {
   identity: "Identity", education: "Education", preferences: "Preferences",
   learning: "Learning", communication: "Communication", projects: "Projects",
   "last-seat": "Last Seat", atlas: "Atlas", tennis: "Tennis", goals: "Goals",
+};
+
+const TOOL_LABELS_EXTRA = {
+  web_search: "Searched the web",
+  web_fetch: "Fetched a page",
+  filesystem: "Used the workspace",
 };
 function memoryLine(payload) {
   const el = document.createElement("details");
@@ -596,9 +603,9 @@ const TOOL_CATALOG = [
   { icon: "memory", name: "Memory", desc: "Remember, recall, correct and forget durable facts.", available: true },
   { icon: "pulse", name: "Recent activity", desc: "Local git commits and recently edited files.", available: true },
   { icon: "plug", name: "Model runtime", desc: "Connect Ollama, LM Studio, llama.cpp or vLLM.", available: true, live: true },
-  { icon: "globe", name: "Web search", desc: "Search the internet during a conversation.", available: false },
-  { icon: "file", name: "Web fetch", desc: "Read a public page and cite its contents.", available: false },
-  { icon: "folder", name: "Filesystem", desc: "Read and edit files in a chosen workspace.", available: false },
+  { icon: "globe", name: "Web search", desc: "Search the internet during a conversation.", toolKey: "web_search", available: true },
+  { icon: "file", name: "Web fetch", desc: "Read a public page and cite its contents.", toolKey: "web_fetch", available: true },
+  { icon: "folder", name: "Filesystem", desc: "Read and edit files in a chosen workspace.", toolKey: "filesystem", available: false },
   { icon: "terminal", name: "Terminal", desc: "Run commands in a sandboxed shell.", available: false },
   { icon: "git", name: "Git / GitHub", desc: "Branches, diffs, issues and pull requests.", available: false },
   { icon: "image", name: "Image generation", desc: "Create and edit images locally.", available: false },
@@ -606,6 +613,35 @@ const TOOL_CATALOG = [
   { icon: "database", name: "Last Seat MCP", desc: "Connect the autonomous agent economy project.", available: false },
   { icon: "plug", name: "Other MCP servers", desc: "Bring your own tool servers.", available: false },
 ];
+
+async function refreshTools() {
+  try {
+    state.tools = (await api("/api/tools")).tools || [];
+  } catch { state.tools = []; }
+  const fs = state.tools.find((t) => t.name === "filesystem");
+  const card = TOOL_CATALOG.find((t) => t.toolKey === "filesystem");
+  if (card && fs) {
+    card.available = fs.available;
+    card.note = fs.available ? fs.workspace : fs.error || "choose a workspace";
+  }
+  if (state.view === "tools") renderTools();
+}
+
+async function configureTool(name) {
+  if (name === "filesystem") {
+    const current = state.tools.find((t) => t.name === "filesystem")?.workspace || "";
+    const path = prompt("Workspace folder Atlas may read and edit", current);
+    if (!path) return;
+    try {
+      await api("/api/tools/config", {
+        method: "POST", body: JSON.stringify({ workspace: path }),
+      });
+      await refreshTools();
+    } catch (err) { alert(err.message); }
+    return;
+  }
+  openSettings().then(() => selectSettingsTab("tools"));
+}
 
 function renderTools() {
   const active = state.runtimes.find((r) => r.ok);
@@ -621,8 +657,8 @@ function renderTools() {
       <div class="card-head">${icon(t.icon)}<h3>${esc(t.name)}</h3></div>
       <p>${esc(t.desc)}</p>
       <span class="pill ${quiet ? "quiet" : ""}">${esc(status)}</span>
-      <div class="card-foot"><button class="text-btn" ${t.available ? "" : "disabled"}>
-        ${t.available ? "In use" : "Configure"}</button></div>
+      <div class="card-foot"><button class="text-btn" data-configure="${esc(t.toolKey || "")}" ${t.available && !t.toolKey ? "disabled" : ""}>
+        ${t.toolKey ? "Configure" : t.available ? "In use" : "Configure"}</button></div>
     </article>`;
   };
   $("#workspace-body").innerHTML = `
@@ -635,6 +671,10 @@ function renderTools() {
       <div class="card-head">${icon("git")}<h3>No repository connected</h3></div>
       <p>Repository, branch and changed-file status will appear here when Git tools are added.</p>
     </div>`;
+
+  $("#workspace-body").querySelectorAll("[data-configure]").forEach((button) => {
+    if (button.dataset.configure) button.onclick = () => configureTool(button.dataset.configure);
+  });
 }
 
 /* ----------------------------------------------------------- artifacts */
@@ -833,6 +873,14 @@ function cycleUsageDock() {
 const dlg = $("#configure");
 let runtimeCache = { at: 0, list: [] };
 
+function fsAvailable() {
+  return state.tools.find((t) => t.name === "filesystem")?.available || false;
+}
+function fsNote() {
+  const fs = state.tools.find((t) => t.name === "filesystem");
+  return fs?.workspace || fs?.error || "no workspace configured";
+}
+
 function selectSettingsTab(name) {
   document.querySelectorAll(".settings-tabs button").forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === name));
@@ -845,8 +893,12 @@ document.querySelectorAll(".settings-tabs button").forEach((button) => {
   button.onclick = () => {
     selectSettingsTab(button.dataset.tab);
     if (button.dataset.tab === "tools") {
-      $("#settings-tools").innerHTML = TOOL_CATALOG.map((t) =>
-        `<span class="${t.available ? "on" : ""}">${esc(t.name)} · ${t.available ? "available" : "not configured"}</span>`).join("");
+      const names = ["web_search", "web_fetch", "filesystem"];
+      $("#settings-tools").innerHTML = names.map((name) => {
+        const t = state.tools.find((row) => row.name === name)
+          || { name, available: name === "filesystem" ? fsAvailable() : true };
+        return `<span class="${t.available ? "on" : ""}">${esc(name)} · ${t.available ? "available" : "not configured"}</span>`;
+      }).join("");
     }
   };
 });
@@ -1065,6 +1117,7 @@ document.addEventListener("keydown", (e) => {
   await refreshProfiles();
   await refreshModels();
   refreshRuntimes().catch(() => {});
+  refreshTools().catch(() => {});
   await refreshSessions();
   if (state.sessions.length) await openSession(state.sessions[0].id);
   else await newChat();

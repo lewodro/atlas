@@ -33,6 +33,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import activity
+import fstools
 import librarian
 import memory
 import models
@@ -301,6 +302,16 @@ class Handler(BaseHTTPRequestHandler):
                         "reachable": bool(models.list_models(other, "")),
                     })
                 return self._json(models.describe())
+            if path == "/api/tools":
+                return self._json({
+                    "tools": [
+                        {"name": "web_search", "available": True,
+                         "note": "DuckDuckGo (no key) or Brave if configured"},
+                        {"name": "web_fetch", "available": True,
+                         "note": "public http(s), SSRF-checked"},
+                        {"name": "filesystem", **fstools.status()},
+                    ]
+                })
             if path == "/api/runtimes":
                 return self._json({
                     "runtimes": models.scan_runtimes(),
@@ -369,6 +380,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "saved": saved})
             if path == "/api/memories/clear":
                 return self._json({"deleted": profiles.clear(profiles.active())})
+
+            if path == "/api/tools/config":
+                try:
+                    workspace = fstools.configure_workspace(body.get("workspace", ""))
+                except fstools.ToolError as exc:
+                    return self._json({"error": str(exc)}, 400)
+                return self._json({"ok": True, "workspace": workspace})
 
             if path == "/api/settings":
                 saved = models.save(
