@@ -2,6 +2,13 @@
 
 Atlas is a small agent loop, not a chat wrapper. Everything below runs locally.
 
+## Local info vs public repo
+
+The repo is clean by design: only tools, capabilities, skills, UI and docs.
+All user-specific state lives in gitignored `data/` and `notes/`. `context.py`
+assembles the model prompt from that state at runtime and contains no personal
+facts. `tests/test_agent.py` checks tracked source files for local identifiers.
+
 ## Tool registry
 
 `registry.py` is the single source of truth. A provider registers a `ToolSpec`
@@ -45,6 +52,17 @@ Starter skills: **web-research**, **github-engineer**, **project-explorer**,
 For very small models the server adds one bounded follow-up after a skill's
 first tool call so the workflow completes (e.g. research fetches the source it
 found; Git inspection calls status and diff).
+
+## Fine-tuning for small models
+
+No weights are changed. The prompt is tuned instead:
+
+- `context.py` injects one bounded card: saved facts, workspace state and a
+  small project map (only when relevant), capped at 1800 characters
+- canonical facts are pulled by category when keyword retrieval is weak
+- skill selection prefers `personal-memory` for "what do you know about me"
+- `skills_list` / `skills_load` let the model load instructions on demand
+- deterministic follow-ups complete research and Git workflows
 
 ## Loop
 

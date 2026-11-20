@@ -21,6 +21,7 @@ from pathlib import Path
 
 import activity
 import artifacts
+import context
 import fstools
 import librarian
 import netguard
@@ -66,9 +67,9 @@ def build_system(mode: str, user_text: str, skill_id: str | None = None) -> str:
     # Project skills must reason from tool results, not from a global scan of ~/dev.
     activity = "" if skill_id in ("project-explorer", "github-engineer") else activity_block()
     prompt = modes.build(mode, notes, activity)
-    context = workspace.line()
-    if context:
-        prompt += "\n\n" + context
+    local_card = context.card(user_text, skill_id)
+    if local_card:
+        prompt += "\n\n" + local_card
     skill = skills.load_skill(skill_id) if skill_id else None
     if skill and skill.get("enabled"):
         prompt += "\n\nSKILL: " + skill["name"] + "\n" + skill["body"][:1400]
@@ -143,9 +144,6 @@ def turn(
     write_memory: bool = True,
 ) -> str:
     memory.log_turn("user", user_text, mode, memory.cli_session())
-    messages[0] = {"role": "system", "content": build_system(mode, user_text)}
-    messages.append({"role": "user", "content": user_text})
-
     skill_id = skills.select_skill(user_text)
     messages[0] = {"role": "system", "content": build_system(mode, user_text, skill_id)}
     messages.append({"role": "user", "content": user_text})

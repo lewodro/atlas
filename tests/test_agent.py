@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import artifacts  # noqa: E402
+import context  # noqa: E402
 import fstools  # noqa: E402
 import gittools  # noqa: E402
 import profiles  # noqa: E402
@@ -53,6 +54,14 @@ class Registry(unittest.TestCase):
         result = registry.run("does_not_exist", {})
         self.assertFalse(result["ok"])
         self.assertIn("unknown tool", result["error"])
+
+    def test_skills_tools(self):
+        listed = registry.run("skills_list", {})
+        self.assertTrue(listed["ok"])
+        self.assertIn("web-research", listed["data"])
+        loaded = registry.run("skills_load", {"id": "web-research"})
+        self.assertTrue(loaded["ok"])
+        self.assertIn("web_fetch", loaded["data"])
 
     def test_ask_and_deny(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -165,3 +174,39 @@ class Artifacts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContextPack(unittest.TestCase):
+    def test_card_uses_only_runtime_state(self):
+        facts = [
+            {"content": "The user keeps notes in Markdown.", "category": "preferences"},
+            {"content": "The user studies computing science.", "category": "education"},
+        ]
+        info = {
+            "configured": True, "root": "/tmp/project", "repo": "project",
+            "branch": "main", "dirty": False, "changed": 0, "is_git": True,
+        }
+        with patch.object(profiles, "search", return_value=facts), \
+             patch.object(workspace, "context", return_value=info), \
+             patch.object(skills, "list_skills", return_value=[
+                 {"id": "web-research", "description": "Research", "tools": ["web_search"], "enabled": True}
+             ]), \
+             patch.object(fstools, "list_dir", side_effect=fstools.ToolError("skip")), \
+             patch.object(fstools, "read", side_effect=fstools.ToolError("skip")):
+            card = context.card("what do I keep notes in")
+        self.assertIn("SAVED FACTS", card)
+        self.assertIn("Markdown", card)
+        self.assertIn("WORKSPACE: /tmp/project", card)
+        self.assertIn("SKILLS INSTALLED: web-research", card)
+        self.assertNotIn("Vasilii", card)
+
+    def test_public_repo_has_no_local_profile_data(self):
+        forbidden = ("Vasilii", "Orlov", "miro@local", "192.168.1.42")
+        root = Path(__file__).resolve().parent.parent
+        for folder in ("*.py", "web/*", "skills/*/*", "docs/*.md", "README.md"):
+            for path in root.glob(folder):
+                if not path.is_file():
+                    continue
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                for word in forbidden:
+                    self.assertNotIn(word, text, f"{word} found in {path.name}")

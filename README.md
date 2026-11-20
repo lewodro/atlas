@@ -11,6 +11,7 @@
 [![Tools](https://img.shields.io/badge/tools-6%20live-2ea44f)]()
 [![Skills](https://img.shields.io/badge/skills-4%20lazy--loaded-22d3a6)]()
 [![Permissions](https://img.shields.io/badge/permissions-ALLOW%20%2F%20ASK%20%2F%20DENY-6f42c1)]()
+[![Local data](https://img.shields.io/badge/local%20data-never%20committed-2ea44f)]()
 
 ```
 you> I'm a first-year CS student, 8 GB M1, learning Python and C.
@@ -224,6 +225,17 @@ printf 'hello' | atlas fs write notes/hello.txt
 atlas fs read notes/hello.txt
 uv run python -m unittest discover -s tests -v   # 33 offline tests
 ```
+
+---
+
+## Local data vs the public repo
+
+This repository contains **only code, skills and docs**. Your memories, chats,
+artifacts, workspace path, `.env` and downloaded models stay in gitignored
+folders (`data/`, `notes/`, `.venv/`, `vendor/`). `context.py` reads that local
+state at runtime; no personal facts are written into source files — a test
+enforces this. Anyone can clone this repo, point Atlas at their own Ollama or
+LM Studio models, and get their own private agent.
 
 ---
 

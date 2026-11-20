@@ -22,6 +22,7 @@ from typing import Any, Callable
 import config
 import fstools
 import gittools
+import skills
 import webtools
 
 PERMISSIONS_FILE = config.ROOT_DATA / "permissions.json"
@@ -249,6 +250,22 @@ def _git_diff(args: dict) -> str:
     return gittools.diff_text()
 
 
+def _skills_list(args: dict) -> str:
+    rows = skills.list_skills()
+    return "\n".join(
+        f"{s['id']}: {s['description']} [{', '.join(s['tools'])}]"
+        for s in rows if s["enabled"]
+    ) or "No skills installed."
+
+
+def _skills_load(args: dict) -> str:
+    skill_id = str(args.get("id", ""))
+    item = skills.load_skill(skill_id)
+    if not item:
+        raise ValueError(f"no such skill: {skill_id}")
+    return f"SKILL {item['name']}:\n{item['body'][:3000]}"
+
+
 def _git_log(args: dict) -> str:
     return gittools.log_text(int(args.get("limit", 8)))
 
@@ -279,6 +296,18 @@ def register_builtins() -> None:
         handler=_filesystem, category="filesystem", provider="atlas",
         permission=lambda args: "ASK" if str(args.get("action", "")).lower() == "write" else "ALLOW",
         available=lambda: fstools.status()["available"],
+    ))
+    register(ToolSpec(
+        id="skills_list",
+        description="List installed skill names and descriptions. Load one with skills_load when its workflow fits.",
+        parameters={"type": "object", "properties": {}},
+        handler=_skills_list, category="skills", provider="atlas",
+    ))
+    register(ToolSpec(
+        id="skills_load",
+        description="Load the full instructions of one skill by id, only when needed.",
+        parameters={"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+        handler=_skills_load, category="skills", provider="atlas",
     ))
     register(ToolSpec(
         id="git_status",

@@ -1,7 +1,7 @@
 ---
 name: Personal memory
 description: Recall durable facts about the user or save an explicitly stated fact
-tags: [memory, remember, recall, identity, preferences, profile]
+tags: [memory, remember, recall, identity, preferences, profile, studying, projects, know]
 tools: [search_notes, list_memories, remember]
 ---
 
