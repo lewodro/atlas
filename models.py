@@ -8,7 +8,7 @@ Atlas talks to anything that speaks the OpenAI chat-completions API:
     vLLM              http://127.0.0.1:8000/v1
     OpenRouter        https://openrouter.ai/api/v1
     OpenAI            https://api.openai.com/v1
-    your LAN box      http://192.168.1.42:11434/v1
+    your LAN box      http://your-gpu-host:11434/v1
 
 Runtime choices live in data/settings.json (gitignored, next to the database)
 and win over .env, so the GUI can switch models without a restart:

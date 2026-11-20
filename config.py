@@ -3,7 +3,7 @@
 Everything that differs between "running on the MacBook" and "running on the
 Windows laptop with the RTX 2060" is one line in .env:
 
-    ATLAS_BASE_URL=http://192.168.1.42:11434/v1
+    ATLAS_BASE_URL=http://your-gpu-host:11434/v1
 """
 
 from __future__ import annotations

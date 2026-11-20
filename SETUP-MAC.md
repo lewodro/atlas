@@ -35,20 +35,20 @@ atlas
 On the Windows machine, run `install.ps1` — it prints a line like:
 
 ```
-ATLAS_BASE_URL=http://192.168.1.42:11434/v1
+ATLAS_BASE_URL=http://your-gpu-host:11434/v1
 ```
 
 Put that in `~/dev/atlas/.env`:
 
 ```ini
-ATLAS_BASE_URL=http://192.168.1.42:11434/v1
+ATLAS_BASE_URL=http://your-gpu-host:11434/v1
 ATLAS_MODEL=qwen2.5:7b
 ```
 
 Verify from the Mac before blaming Atlas:
 
 ```bash
-curl http://192.168.1.42:11434/api/version
+curl http://your-gpu-host:11434/api/version
 atlas check
 ```
 

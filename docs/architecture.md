@@ -17,7 +17,7 @@ model on the laptop, a 7B on the LAN, or a frontier model for one question.
 Switching tiers is one line in `.env` — the code doesn't know or care:
 
 ```ini
-ATLAS_BASE_URL=http://192.168.1.42:11434/v1   # the 2060
+ATLAS_BASE_URL=http://your-gpu-host:11434/v1   # the 2060
 ATLAS_MODEL=qwen2.5:7b
 ```
 

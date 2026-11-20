@@ -24,6 +24,17 @@ anywhere.
 
 ---
 
+## Screenshots
+
+| | | |
+|---|---|---|
+| ![Atlas chat](docs/screenshots/chat.png) | ![Tools](docs/screenshots/tools.png) | ![Memory](docs/screenshots/memory.png) |
+| Chat &amp; welcome | Tool workspace | Memory |
+
+![Artifacts](docs/screenshots/artifacts.png)
+
+---
+
 ## Demo
 
 <!-- Record it: see docs/README.md, then uncomment.
@@ -33,7 +44,7 @@ anywhere.
 ```console
 $ atlas
 atlas · life + habits + focus. Keeps you honest.
-      · qwen2.5:7b on remote GPU @ http://192.168.1.42:11434/v1 · 18 notes
+      · qwen2.5:7b on remote GPU @ http://your-gpu-host:11434/v1 · 18 notes
 
 [coach]> I'm behind on my C assignment and I keep avoiding it.
 
@@ -122,6 +133,32 @@ Same harness, same memory, saved sessions. Browser optional. On first launch
 Atlas finds your running Ollama, LM Studio, llama.cpp or vLLM server by itself
 — click ⚙ to switch runtimes and models without editing files.
 
+The interface is a quiet workspace: a compact sidebar with chats, Tools,
+Artifacts and Memory; a single rounded composer; custom keyboard-accessible
+controls for mode, model and profile. Cyan is reserved for active state,
+local model status and running tools. No native dropdowns, no dashboard clutter.
+
+**Tools** shows what is genuinely available on this machine and clearly marks
+everything else as *not configured* — web search, filesystem, terminal, Git,
+image generation and MCP servers have UI surfaces ready, but are not
+implemented yet. **Artifacts** is an empty list with preview components ready
+for real files. **Memory** presents durable facts as plain statements grouped
+into About you / Preferences / Projects / Goals / Environment.
+
+---
+
+## Interface architecture
+
+```
+web/index.html      semantic shell, one inline SVG icon set
+web/style.css       design tokens, surfaces, components, responsive rules
+web/app.js          state, custom dropdowns, SSE streaming, views, memory UI
+```
+
+No framework, no build step, no bundled assets. The frontend speaks only to
+the existing `/api/*` routes; adding a real tool later means filling an
+already-designed card, not redesigning the shell.
+
 ```bash
 uv run python server.py     # http://localhost:7777
 atlas web                   # starts the server and opens it
@@ -205,7 +242,7 @@ Better answers, same memory:
 It prints one line for the client's `.env`:
 
 ```ini
-ATLAS_BASE_URL=http://192.168.1.42:11434/v1
+ATLAS_BASE_URL=http://your-gpu-host:11434/v1
 ATLAS_MODEL=qwen2.5:7b
 ```
 
