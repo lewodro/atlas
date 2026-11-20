@@ -221,16 +221,36 @@ Measured on an 8 GB M1 with `qwen2.5:3b`, not estimated:
 | tool call, native JSON | 12/16 · 75% |
 | tool call, usable after salvage | 12/16 · 75% |
 | retrieval recall@5 | 5/5 |
-| latency, median | 3.98 s |
+| latency, median | 2.14 s |
 
-Reproduce on your own hardware:
+Reproduce on your own hardware, or compare a different model:
 
 ```bash
 atlas bench
+atlas bench --model qwen2.5:7b --out docs/bench-7b.json
 ```
 
 The 3-in-4 failure rate is why `main.py` has a deterministic extraction pass
 and `librarian.py` has guards. Full output: `docs/bench.json`.
+
+---
+
+## Bring your own model
+
+Atlas talks to anything that speaks the OpenAI chat-completions API: Ollama,
+LM Studio, llama.cpp, vLLM, OpenRouter, or a GPU box on your LAN.
+
+```bash
+atlas models                                  # what is installed
+atlas models --use qwen2.5:7b                 # switch the default
+atlas models --endpoint http://127.0.0.1:1234/v1 --use local-model
+atlas models --pull qwen2.5:7b                # download with Ollama
+```
+
+Or click **⚙** in the web UI to set the endpoint, key, and model, and use the
+**model dropdown** to pick a model per chat. No restart needed — choices live
+in `data/settings.json`, not in the code. Embedding models are hidden from the
+picker.
 
 ---
 

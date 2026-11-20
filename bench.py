@@ -91,7 +91,7 @@ def _from_prose(text: str) -> tuple[str, dict] | None:
     return data.get("name") or "", args
 
 
-def bench_tools(runs: int, limit: int) -> dict:
+def bench_tools(runs: int, limit: int, model: str | None = None) -> dict:
     prompts = TOOL_PROMPTS[:limit] if limit else TOOL_PROMPTS
     counts = {"native": 0, "salvaged": 0, "prose": 0, "invalid": 0}
     runs_total = 0
@@ -103,7 +103,7 @@ def bench_tools(runs: int, limit: int) -> dict:
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": prompt},
             ]
-            msg = llm.chat(messages, TOOLS)
+            msg = llm.chat(messages, TOOLS, model=model)
             runs_total += 1
 
             native = None
@@ -169,14 +169,14 @@ def bench_recall() -> dict:
     }
 
 
-def bench_latency() -> dict:
+def bench_latency(model: str | None = None) -> dict:
     times = []
     for prompt in LATENCY_PROMPTS:
         started = time.perf_counter()
         llm.chat([
             {"role": "system", "content": SYSTEM},
             {"role": "user", "content": prompt},
-        ])
+        ], model=model)
         elapsed = time.perf_counter() - started
         times.append(round(elapsed, 2))
         print(f"  {elapsed:5.2f}s  {prompt[:56]}")
@@ -194,33 +194,37 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="measure atlas on your hardware")
     parser.add_argument("--runs", type=int, default=2, help="attempts per tool prompt (default 2)")
     parser.add_argument("--limit", type=int, default=0, help="use only the first N tool prompts")
+    parser.add_argument("--model", help="benchmark this model id instead of the configured default")
+    parser.add_argument("--out", type=Path, default=OUT, help="where to write the JSON result")
     args = parser.parse_args()
 
-    print(f"atlas bench · {MODEL} · {'remote GPU' if REMOTE else 'this machine'} · {WHERE}")
+    name = args.model or MODEL
+    print(f"atlas bench · {name} · {'remote GPU' if REMOTE else 'this machine'} · {WHERE}")
     try:
-        llm.chat([{"role": "user", "content": "ping"}])
+        llm.chat([{"role": "user", "content": "ping"}], model=args.model)
     except Exception as exc:
         sys.exit(f"cannot reach the model: {type(exc).__name__}: {exc}")
 
     print("\ntool calling")
-    tools = bench_tools(args.runs, args.limit)
+    tools = bench_tools(args.runs, args.limit, args.model)
 
     print("\nretrieval")
     recall = bench_recall()
 
     print("\nlatency")
-    latency = bench_latency()
+    latency = bench_latency(args.model)
 
     result = {
-        "model": MODEL,
+        "model": name,
         "where": WHERE,
         "tools": tools,
         "retrieval": recall,
         "latency": latency,
         "measured_at": time.strftime("%Y-%m-%d"),
     }
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(result, indent=2) + "\n")
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, indent=2) + "\n")
 
     print("\n| measurement | result |")
     print("|---|---|")
@@ -228,7 +232,7 @@ def main() -> None:
     print(f"| tool call, usable after salvage | {tools['native'] + tools['salvaged']}/{tools['attempts']} · {tools['usable_pct']}% |")
     print(f"| retrieval recall@5 | {recall['hits']}/{recall['questions']} · {recall['recall_at_5']} |")
     print(f"| latency, median | {latency['median_s']}s |")
-    print(f"\nwrote {OUT.relative_to(ROOT)}")
+    print(f"\nwrote {out}")
 
 
 if __name__ == "__main__":

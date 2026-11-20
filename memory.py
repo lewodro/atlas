@@ -196,10 +196,24 @@ def _words(text: str) -> set[str]:
     return set(_WORD.findall(text.lower()))
 
 
+def _stem(word: str) -> str:
+    """Tiny suffix stripper. 'programming'/'programmer' -> 'programm'.
+
+    Enough to keep the offline keyword fallback useful when no embedding
+    model is running — which is exactly when you need it most.
+    """
+    if len(word) > 5 and word.endswith("ing"):
+        return word[:-3]
+    if len(word) > 4 and word.endswith(("ed", "er")):
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
 def keywords(text: str) -> set[str]:
-    """Meaningful words only, so 'I am learning Python' matches
-    'The user is learning Python'."""
-    return _words(text) - _STOP
+    """Meaningful, lightly stemmed words, so 'write' matches 'writes'."""
+    return {_stem(word) for word in _words(text) - _STOP}
 
 
 def _body(path: Path) -> str:
@@ -310,22 +324,23 @@ def recall(query: str, k: int = 5, budget: int = 2600) -> str:
       2. keywords (dumb, transparent, works offline forever)
       3. the newest notes, so "what do you know about me?" is never empty
     """
-    # Exact keyword recall is effectively free and avoids loading/running a
-    # second model before every chat response. Semantic recall remains the
-    # fallback when wording differs ("studying" vs "learning").
-    wanted = keywords(query)
+    # Both channels run, then they vote. Previously a single weak keyword hit
+    # ("language") suppressed semantic recall entirely, so "which language do
+    # I write" returned an unrelated note about TEST SOL. Merging fixed that.
     strategy = os.getenv("ATLAS_RETRIEVAL", "hybrid").lower()
-    if strategy == "semantic":
-        hits = _semantic_hits(query)
-    else:
-        hits = _keyword_hits(query)
-        if not hits and wanted and strategy != "keyword":
-            hits = _semantic_hits(query)
+
+    keyword = [] if strategy == "semantic" else _keyword_hits(query)
+    # Keywords are free and usually enough. Only pay for an embedding call
+    # when they find nothing — e.g. "studying" vs "learning".
+    semantic = []
+    if strategy != "keyword" and not keyword:
+        semantic = _semantic_hits(query)
+    hits = rank_hits(keyword, semantic)
     if not hits:
         hits = [(0.0, p) for p in _recent(3)]
 
     chunks, used = [], 0
-    for _, path in hits[:k]:
+    for path, _ in hits[:k]:
         body = _body(path)
         if used + len(body) > budget:
             body = body[: max(0, budget - used)] + "…"
@@ -334,6 +349,19 @@ def recall(query: str, k: int = 5, budget: int = 2600) -> str:
         if used >= budget:
             break
     return "\n\n".join(chunks)
+
+
+def rank_hits(
+    keyword: list[tuple[float, Path]], semantic: list[tuple[float, Path]]
+) -> list[tuple[Path, float]]:
+    """Keyword and semantic scores vote together; a weak keyword hit must
+    never hide a strong semantic one (the 2026-11 retrieval bug)."""
+    scores: dict[Path, float] = {}
+    for score, path in keyword:
+        scores[path] = scores.get(path, 0.0) + score
+    for score, path in semantic:
+        scores[path] = scores.get(path, 0.0) + 2.0 * score
+    return sorted(scores.items(), key=lambda row: (-row[1], -row[0].stat().st_mtime))
 
 
 def _recent(n: int) -> list[Path]:
@@ -346,7 +374,17 @@ def _keyword_hits(query: str) -> list[tuple[float, Path]]:
         return []
     hits = []
     for path in note_paths():
-        found = wanted & keywords(_body(path))
+        other = keywords(_body(path))
+        found = set()
+        for word in wanted:
+            if word in other:
+                found.add(word)
+            elif any(
+                candidate.startswith(word) or word.startswith(candidate)
+                for candidate in other
+                if min(len(candidate), len(word)) >= 3
+            ):
+                found.add(word)  # "mac" matches "macbook"
         if found:
             hits.append((len(found) / (len(wanted) ** 0.5), path))
     hits.sort(key=lambda row: (-row[0], -row[1].stat().st_mtime))
@@ -377,9 +415,11 @@ def _normalise(vec: np.ndarray) -> np.ndarray:
 
 
 def _embed(texts: list[str]) -> list[list[float]]:
+    import models
     from openai import OpenAI
 
-    client = OpenAI(base_url=BASE_URL, api_key=API_KEY)
+    current = models.load()
+    client = OpenAI(base_url=current["base_url"], api_key=current["api_key"])
     reply = client.embeddings.create(model=EMBED_MODEL, input=texts)
     return [item.embedding for item in reply.data]
 

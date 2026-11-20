@@ -7,8 +7,8 @@
     "attempts": 16,
     "native": 12,
     "salvaged": 0,
-    "invalid": 4,
-    "no_call": 0,
+    "invalid": 2,
+    "no_call": 2,
     "native_pct": 75.0,
     "usable_pct": 75.0
   },
@@ -20,14 +20,14 @@
   },
   "latency": {
     "prompts": 3,
-    "median_s": 3.98,
-    "min_s": 1.08,
-    "max_s": 6.66,
+    "median_s": 2.14,
+    "min_s": 0.49,
+    "max_s": 4.64,
     "all_s": [
-      6.66,
-      1.08,
-      3.98
+      2.14,
+      0.49,
+      4.64
     ]
   },
-  "measured_at": "2026-11-16"
+  "measured_at": "2026-11-18"
 }
