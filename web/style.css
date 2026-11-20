@@ -753,3 +753,35 @@ dialog#configure { width: min(760px, 94vw); }
   .settings-tabs { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border-soft); }
   .usage-panel.docked { left: 0; }
 }
+
+/* ------------------------------------------------ agent runtime surfaces */
+
+.skill-body {
+  margin: 0; padding: 14px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--code-bg); border: 1px solid var(--border-soft);
+  border-radius: var(--r-md); color: var(--text-muted);
+  font: 11.5px/1.6 var(--mono); max-height: 46vh; overflow: auto;
+}
+
+.artifact-image {
+  display: block; max-width: 100%; max-height: 46vh;
+  border-radius: var(--r-md); border: 1px solid var(--border-soft);
+}
+
+.permission-card {
+  align-self: flex-start; max-width: 100%; margin: -12px 0 2px;
+  padding: 11px 13px; border: 1px solid var(--accent-line);
+  border-radius: var(--r-md); background: var(--surface);
+  display: flex; flex-direction: column; gap: 7px; font-size: 12px;
+}
+.permission-card code {
+  font: 11px var(--mono); color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+.permission-actions { display: flex; gap: 7px; }
+.permission-actions button {
+  padding: 5px 11px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--text-muted); font-size: 11.5px;
+}
+.permission-actions button[data-allow="true"] { color: var(--accent); border-color: var(--accent-line); }
