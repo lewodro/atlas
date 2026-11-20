@@ -1,6 +1,7 @@
-/* atlas web — vanilla js, no build step. */
+/* Atlas UI — vanilla JS. No build step, no framework, no fake data. */
 
 const $ = (s) => document.querySelector(s);
+const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
 
 const state = {
   sessions: [],
@@ -8,69 +9,69 @@ const state = {
   mode: "coach",
   modes: [],
   models: [],
+  runtimes: [],
   defaultModel: "",
   baseUrl: "",
+  modelChoice: "",
+  profileId: "default",
+  profileName: "Personal",
   sending: false,
   controller: null,
   filter: "",
-  profiles: [],
   memories: [],
   categories: [],
+  view: "chat",
 };
 
-let lifecycleTimer = null;
-
-function lifecycleHeartbeat() {
+/* lifecycle lease (the server stops itself when the last tab closes) */
+let lease = null;
+function heartbeat() {
   fetch("/api/lifecycle", { method: "POST", keepalive: true }).catch(() => {});
 }
-
-function startLifecycle() {
-  if (lifecycleTimer) clearInterval(lifecycleTimer);
-  lifecycleHeartbeat();
-  lifecycleTimer = setInterval(lifecycleHeartbeat, 3000);
+function startLease() {
+  if (lease) clearInterval(lease);
+  heartbeat();
+  lease = setInterval(heartbeat, 3000);
 }
-
 window.addEventListener("pagehide", () => {
-  if (lifecycleTimer) {
-    clearInterval(lifecycleTimer);
-    lifecycleTimer = null;
-  }
-  navigator.sendBeacon("/api/lifecycle/close", new Blob(["{}"], {
-    type: "application/json",
-  }));
+  if (lease) { clearInterval(lease); lease = null; }
+  navigator.sendBeacon("/api/lifecycle/close", new Blob(["{}"], { type: "application/json" }));
 });
-
-// Safari and Firefox may restore the page from back/forward cache without
-// running boot() again. Reclaim the server lease when that happens.
-window.addEventListener("pageshow", (event) => {
-  if (event.persisted) startLifecycle();
-});
+window.addEventListener("pageshow", (e) => { if (e.persisted) startLease(); });
 
 /* ---------------------------------------------------------------- utils */
 
-const esc = (s) =>
-  s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function md(text) {
-  const parts = esc(text).split(/```/);
-  return parts
-    .map((part, i) => {
-      if (i % 2) return `<pre><code>${part.replace(/^[a-z]*\n/, "")}</code></pre>`;
-      return part
-        .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-        .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-    })
-    .join("");
+  return esc(text).split(/```/).map((part, i) => {
+    if (i % 2) return `<pre><code>${part.replace(/^[a-z]*\n/, "")}</code></pre>`;
+    return part
+      .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  }).join("");
 }
 
-const ago = (iso) => {
-  const then = new Date(iso.replace(" ", "T") + "Z").getTime();
+function ago(iso) {
+  const then = new Date(String(iso).replace(" ", "T") + "Z").getTime();
   const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
   if (mins < 1) return "now";
   if (mins < 60) return `${mins}m`;
   if (mins < 1440) return `${Math.round(mins / 60)}h`;
   return `${Math.round(mins / 1440)}d`;
-};
+}
+
+function friendlyModel(id) {
+  if (!id) return "Default model";
+  let name = id.split("/").pop().replace(/[-_:]/g, " ");
+  name = name.replace(/(\d+(?:\.\d+)?)b\b/gi, "$1B");
+  return name.replace(/\s+/g, " ").trim().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function friendlyMode(mode) {
+  return { coach: "Coach", tutor: "Tutor", review: "Review", debug: "Debug", plan: "Plan" }[mode] || mode;
+}
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -82,206 +83,333 @@ async function api(path, opts = {}) {
   return data;
 }
 
-/* ---------------------------------------------------------------- render */
+/* ----------------------------------------------------- custom dropdown */
+
+function makeSelect(root, config = {}) {
+  const trigger = root.querySelector(".select-trigger");
+  const valueEl = root.querySelector(".select-value");
+  const menu = root.querySelector(".select-menu");
+  let options = [];
+  let value = config.value ?? "";
+
+  function labelFor(v) {
+    return options.find((o) => o.value === v)?.label || config.placeholder || "Select";
+  }
+
+  function paint() {
+    menu.innerHTML = options.map((o, i) => `
+      <button type="button" role="option" aria-selected="${o.value === value}"
+              class="select-option ${o.value === value ? "selected" : ""}" data-i="${i}">
+        <span class="tick">${icon("check")}</span>
+        <span class="o-label">${esc(o.label)}</span>
+        ${o.meta ? `<span class="o-meta">${esc(o.meta)}</span>` : ""}
+      </button>`).join("");
+    menu.querySelectorAll(".select-option").forEach((item) => {
+      item.onclick = () => choose(options[Number(item.dataset.i)].value);
+    });
+  }
+
+  function open() {
+    paint();
+    menu.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    (menu.querySelector(".selected") || menu.querySelector(".select-option"))?.focus();
+  }
+  function close() {
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+  }
+  function choose(next) {
+    value = next;
+    valueEl.textContent = labelFor(next);
+    close();
+    trigger.focus();
+    paint();
+    config.onChange?.(next);
+  }
+
+  trigger.onclick = () => (menu.hidden ? open() : close());
+  trigger.onkeydown = (e) => {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault(); open();
+    }
+  };
+  menu.onkeydown = (e) => {
+    const items = [...menu.querySelectorAll(".select-option")];
+    const at = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); items[(at + 1) % items.length]?.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(at - 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); trigger.focus(); }
+  };
+  document.addEventListener("click", (e) => {
+    if (!root.contains(e.target)) close();
+  });
+
+  return {
+    setOptions(list, keep = true) {
+      options = list;
+      if (!keep || !options.some((o) => o.value === value)) value = list[0]?.value ?? "";
+      valueEl.textContent = labelFor(value);
+      paint();
+    },
+    setValue(next) { value = next; valueEl.textContent = labelFor(next); paint(); },
+    get value() { return value; },
+    open,
+    close,
+  };
+}
+
+/* ---------------------------------------------------------- navigation */
+
+const selects = {};
+
+function setView(name) {
+  state.view = name;
+  $("#chat-view").hidden = name !== "chat";
+  $("#workspace-view").hidden = name === "chat";
+  document.body.dataset.view = name;
+
+  document.querySelectorAll(".primary-nav .nav-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.view === name);
+  });
+
+  const titles = {
+    tools: ["Tools", "Capabilities available to Atlas on this machine."],
+    artifacts: ["Artifacts", "Files and outputs Atlas creates or works on."],
+    memory: ["Memory", "What Atlas remembers about you, in plain language."],
+  };
+  if (titles[name]) {
+    $("#workspace-title").textContent = titles[name][0];
+    $("#workspace-subtitle").textContent = titles[name][1];
+  }
+  $("#memory-controls").hidden = name !== "memory";
+  $("#workspace-actions").innerHTML = name === "memory"
+    ? `<button class="text-btn" id="mem-export">${icon("download")} Export</button>` : "";
+  if (name === "memory") $("#mem-export").onclick = exportMemories;
+
+  if (name === "tools") renderTools();
+  if (name === "artifacts") renderArtifacts();
+  if (name === "memory") refreshMemories();
+  $("#sidebar").classList.remove("open");
+}
+
+document.querySelectorAll(".primary-nav .nav-item").forEach((item) => {
+  item.onclick = () => setView(item.dataset.view);
+});
+$("#composer-tools").onclick = () => setView("tools");
+$("#settings").onclick = () => openSettings();
+$("#header-settings").onclick = () => openSettings();
+$("#menu").onclick = () => $("#sidebar").classList.toggle("open");
+$("#collapse").onclick = () => {
+  if (innerWidth <= 760) $("#sidebar").classList.toggle("open");
+  else $("#app").classList.toggle("collapsed");
+};
+
+/* ---------------------------------------------------------------- chat */
 
 function renderSessions() {
-  const nav = $("#sessions");
+  const box = $("#sessions");
   const q = state.filter.toLowerCase();
-  const list = state.sessions.filter(
-    (s) => !q || s.title.toLowerCase().includes(q) || s.mode.includes(q),
-  );
+  const list = state.sessions.filter((s) =>
+    !q || s.title.toLowerCase().includes(q) || s.mode.includes(q));
 
-  nav.innerHTML = "";
+  box.innerHTML = "";
   if (!list.length) {
-    nav.innerHTML = `<div class="empty" style="padding:8px 4px">no chats${q ? " match" : " yet"}</div>`;
+    box.innerHTML = `<div class="empty-note">No chats${q ? " match your search" : " yet"}.</div>`;
     return;
   }
-
   for (const s of list) {
-    const el = document.createElement("div");
-    el.className = "chat" + (s.id === state.current ? " active" : "");
-    el.innerHTML = `
-      <div class="name">${esc(s.title)}</div>
-      <button class="kill" title="delete">✕</button>
-      <div class="meta">${s.mode} · ${s.turns} msg · ${ago(s.updated)}</div>`;
-    el.onclick = (e) => {
-      if (e.target.classList.contains("kill")) return;
-      openSession(s.id);
-      $("#sidebar").classList.remove("open");
-    };
-    el.querySelector(".name").ondblclick = () => renameSession(s);
-    el.querySelector(".kill").onclick = (e) => {
-      e.stopPropagation();
-      removeSession(s);
-    };
-    nav.appendChild(el);
+    const row = document.createElement("div");
+    row.className = "chat-row" + (s.id === state.current ? " active" : "");
+    row.innerHTML = `
+      <span class="name">${esc(s.title)}</span>
+      <span class="meta">${ago(s.updated)}</span>
+      <button class="kill" title="Delete chat">${icon("close")}</button>`;
+    row.onclick = () => { openSession(s.id); $("#sidebar").classList.remove("open"); };
+    row.querySelector(".name").ondblclick = () => renameSession(s);
+    row.querySelector(".kill").onclick = (e) => { e.stopPropagation(); removeSession(s); };
+    box.appendChild(row);
   }
 }
 
-async function refreshProfiles() {
-  const data = await api("/api/profiles");
-  state.profiles = data.profiles;
-  const select = $("#profile");
-  select.innerHTML = state.profiles
-    .map((p) => `<option value="${esc(p.id)}" ${p.active ? "selected" : ""}>${esc(p.name)}</option>`)
-    .join("");
+function welcome() {
+  const name = state.profileName.split(" ")[0] || "there";
+  return `<div class="welcome">
+    <div class="mark">${icon("atlas")}</div>
+    <h2>Hello, ${esc(name)}</h2>
+    <p>What are we working on?</p>
+    <div class="suggestions">
+      <button class="suggestion" data-prompt="Help me plan the next step on a project">${icon("folder")}Work on a project</button>
+      <button class="suggestion" data-prompt="Quiz me on a topic I am studying">${icon("spark")}Study something</button>
+      <button class="suggestion" data-prompt="Inspect the repository I have been working in">${icon("git")}Inspect a repository</button>
+      <button class="suggestion" data-prompt="What do you remember about me?">${icon("memory")}Recall my memory</button>
+    </div>
+  </div>`;
 }
 
-async function refreshMemories() {
-  const category = $("#mem-category").value;
-  const data = await api("/api/memories" + (category ? `?category=${encodeURIComponent(category)}` : ""));
-  state.memories = data.memories;
-  state.categories = data.categories;
-  $("#mem-profile").textContent = `profile ${data.profile} · ${data.memories.length} stored facts`;
-  const options = () => `<option value="">all</option>` +
-    state.categories.map((c) => `<option ${c === category ? "selected" : ""}>${c}</option>`).join("");
-  $("#mem-category").innerHTML = options();
-  $("#mem-add-cat").innerHTML = state.categories
-    .map((c) => `<option ${c === "temporary" ? "selected" : ""}>${c}</option>`).join("");
-  renderMemoryList();
-}
-
-function renderMemoryList() {
-  const q = $("#mem-search").value.toLowerCase();
-  const list = state.memories.filter((m) => !q || m.content.toLowerCase().includes(q));
-  $("#mem-list").innerHTML = list.map((m) => `
-    <div class="memory">
-      <span class="tag">${esc(m.category)}</span>
-      <span class="text">${esc(m.content)}</span>
-      <button type="button" class="kill" data-id="${m.id}" title="forget">✕</button>
-    </div>`).join("") || `<p class="hint">nothing saved yet</p>`;
-  $("#mem-list").querySelectorAll(".kill").forEach((button) => {
-    button.onclick = async () => {
-      await api(`/api/memories/${button.dataset.id}`, { method: "DELETE" });
-      await refreshMemories();
-      await refreshStats();
+function paintWelcome() {
+  const box = $("#messages");
+  if (box.querySelector(".msg")) return;
+  box.innerHTML = welcome();
+  box.querySelectorAll(".suggestion").forEach((card) => {
+    card.onclick = () => {
+      $("#input").value = card.dataset.prompt;
+      $("#input").focus();
+      $("#input").dispatchEvent(new Event("input"));
     };
   });
 }
 
-function renderStats(data) {
-  $("#stats").innerHTML = `
-    <span>notes <b>${data.notes}</b></span>
-    <span>chats <b>${data.sessions}</b></span>
-    <span>turns <b>${data.turns}</b></span>
-    <span>${data.frontier ? "frontier on" : "local only"}</span>`;
-  $("#model").textContent = `${data.model} · ${data.where}`;
-  state.modes = data.modes || [];
-  const select = $("#mode");
-  select.innerHTML = state.modes
-    .map((m) => `<option ${m === state.mode ? "selected" : ""}>${m}</option>`)
-    .join("");
-}
-
 function bubble(role, text = "") {
+  boxlessRemoveWelcome();
   const holder = document.createElement("article");
   holder.className = `msg ${role}`;
-  holder.innerHTML = `<div class="who">${role === "user" ? "you" : "atlas"}</div>
-                      <div class="body"></div>`;
-  const body = holder.querySelector(".body");
-  body.innerHTML = md(text);
+  holder.innerHTML = `<div class="who">${role === "user" ? "You" : "Atlas"}</div><div class="body"></div>`;
+  holder.querySelector(".body").innerHTML = md(text);
   $("#messages").appendChild(holder);
   scrollDown();
-  return { holder, body, text };
+  return { holder, body: holder.querySelector(".body"), text };
 }
+function boxlessRemoveWelcome() { $("#messages .welcome")?.remove(); }
+
+const TOOL_LABELS = {
+  remember: "Saved a memory",
+  search_notes: "Searched memories",
+  recent_activity: "Checked recent activity",
+  forget_memory: "Forgot a memory",
+  list_memories: "Listed memories",
+  update_memory: "Updated a memory",
+};
 
 function toolLine(name, result) {
-  const el = document.createElement("div");
-  el.className = "tool";
-  el.innerHTML = `<b>${esc(name)}</b> → ${esc(result)}`;
+  const el = document.createElement("details");
+  el.className = "tool-call";
+  el.innerHTML = `
+    <summary><span class="pulse"></span><span>${esc(TOOL_LABELS[name] || `Used ${name}`)}</span>${icon("chevron")}</summary>
+    <pre>${esc(result)}</pre>`;
+  $("#messages").appendChild(el);
+  scrollDown();
+}
+
+const CATEGORY_LABELS = {
+  identity: "Identity", education: "Education", preferences: "Preferences",
+  learning: "Learning", communication: "Communication", projects: "Projects",
+  "last-seat": "Last Seat", atlas: "Atlas", tennis: "Tennis", goals: "Goals",
+};
+function memoryLine(payload) {
+  const el = document.createElement("details");
+  el.className = "memory-hint";
+  const items = (payload.categories || []).map((c) =>
+    `<li>${esc(CATEGORY_LABELS[c] || c)}</li>`).join("");
+  el.innerHTML = `<summary>${icon("memory")} Used ${payload.count} ${payload.count === 1 ? "memory" : "memories"}</summary><ul>${items}</ul>`;
   $("#messages").appendChild(el);
   scrollDown();
 }
 
 function scrollDown() {
   const box = $("#messages");
-  const near = box.scrollHeight - box.scrollTop - box.clientHeight < 200;
-  if (near || state.sending) box.scrollTop = box.scrollHeight;
+  if (box.scrollHeight - box.scrollTop - box.clientHeight < 220 || state.sending) {
+    box.scrollTop = box.scrollHeight;
+  }
 }
 
-/* ---------------------------------------------------------------- actions */
-
 async function refreshSessions() {
-  const { sessions } = await api("/api/sessions");
-  state.sessions = sessions;
+  state.sessions = (await api("/api/sessions")).sessions;
   renderSessions();
 }
 
 async function refreshStats() {
-  renderStats(await api("/api/stats"));
+  const data = await api("/api/stats");
+  state.modes = data.modes || [];
+  selects.mode?.setOptions(state.modes.map((m) => ({ value: m, label: friendlyMode(m) })));
+  selects.mode?.setValue(state.mode);
+  $("#activity-label").textContent = data.frontier ? "Frontier" : "Local";
+  $("#runtime-label").textContent = data.where ? data.where.split(" @ ")[0] : "Local runtime";
+  return data;
 }
 
-function renderModels(info) {
-  state.models = info.models || [];
-  state.defaultModel = info.model || "";
-  state.baseUrl = info.base_url || "";
+async function refreshRuntimes() {
+  try {
+    state.runtimes = (await api("/api/runtimes")).runtimes || [];
+  } catch { state.runtimes = []; }
+  if (state.view === "tools") renderTools();
+  renderModelOptions();
+}
 
-  const select = $("#model-pick");
-  const chosen = select.value;
-  select.innerHTML =
-    `<option value="">default · ${esc(state.defaultModel)}</option>` +
-    state.models.map((m) => `<option>${esc(m)}</option>`).join("");
-  if (state.models.includes(chosen)) select.value = chosen;
-
-  const list = $("#cfg-models");
-  if (list) list.innerHTML = state.models.map((m) => `<option>${esc(m)}</option>`).join("");
+function renderModelOptions() {
+  const options = [
+    { value: "", label: `Default · ${friendlyModel(state.defaultModel)}`, meta: "profile default" },
+    ...state.models.map((m) => {
+      const runtime = state.runtimes.find((r) => r.models?.includes(m));
+      return { value: m, label: friendlyModel(m), meta: runtime ? `${runtime.name} · local` : "openai compatible" };
+    }),
+  ];
+  selects.model?.setOptions(options);
+  selects.model?.setValue(state.modelChoice);
 }
 
 async function refreshModels() {
-  renderModels(await api("/api/models"));
+  const info = await api("/api/models");
+  state.models = info.models || [];
+  state.defaultModel = info.model || "";
+  state.baseUrl = info.base_url || "";
+  renderModelOptions();
+  return info;
+}
+
+async function refreshProfiles() {
+  const data = await api("/api/profiles");
+  state.profiles = data.profiles;
+  state.profileId = data.active;
+  const active = data.profiles.find((p) => p.id === data.active);
+  state.profileName = active?.name || "Personal";
+  selects.profile?.setOptions(data.profiles.map((p) => ({
+    value: p.id,
+    label: p.name,
+    meta: p.active ? "active" : `${p.memories} memories`,
+  })));
+  selects.profile?.setValue(data.active);
+  $("#profile-avatar").textContent = (state.profileName[0] || "P").toUpperCase();
 }
 
 async function newChat() {
   const { id } = await api("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ mode: state.mode, model: $("#model-pick").value || undefined }),
+    body: JSON.stringify({ mode: state.mode, model: state.modelChoice || undefined }),
   });
   await refreshSessions();
   await openSession(id);
-  $("#input").focus();
 }
 
 async function openSession(id) {
   const { session, messages } = await api(`/api/sessions/${id}`);
   state.current = id;
   state.mode = session.mode;
-  $("#title").textContent = session.title;
-  $("#mode-chip").textContent = session.mode;
-  $("#mode").value = session.mode;
-  $("#model-pick").value = session.model || "";
+  state.modelChoice = session.model || "";
+  $("#title").textContent = session.title || "New chat";
+  selects.mode?.setValue(state.mode);
+  selects.model?.setValue(state.modelChoice);
 
   const box = $("#messages");
   box.innerHTML = "";
-  if (!messages.length) {
-    box.innerHTML = `<div class="empty">
-      Ask anything. It remembers across chats.<br>
-      <kbd>enter</kbd> send · <kbd>shift</kbd>+<kbd>enter</kbd> newline · <kbd>⌘K</kbd> new chat
-    </div>`;
-  }
-  for (const m of messages) bubble(m.role, m.content);
+  if (messages.length) messages.forEach((m) => bubble(m.role, m.content));
+  else paintWelcome();
   renderSessions();
   $("#input").focus();
 }
 
 async function renameSession(s) {
-  const title = prompt("rename chat", s.title);
+  const title = prompt("Rename chat", s.title);
   if (!title || title === s.title) return;
-  await api(`/api/sessions/${s.id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ title }),
-  });
+  await api(`/api/sessions/${s.id}`, { method: "PATCH", body: JSON.stringify({ title }) });
   await refreshSessions();
   if (s.id === state.current) $("#title").textContent = title;
 }
 
 async function removeSession(s) {
-  if (!confirm(`delete "${s.title}"? this cannot be undone.`)) return;
-  try {
-    await api(`/api/sessions/${s.id}`, { method: "DELETE" });
-  } catch (e) {
-    alert(e.message);
-    return;
-  }
+  if (!confirm(`Delete "${s.title}"? This cannot be undone.`)) return;
+  try { await api(`/api/sessions/${s.id}`, { method: "DELETE" }); }
+  catch (e) { alert(e.message); return; }
   await refreshSessions();
   await refreshStats();
   if (s.id === state.current) {
@@ -291,61 +419,7 @@ async function removeSession(s) {
   }
 }
 
-/* ---------------------------------------------------------------- memories */
-
-const memDlg = $("#memories");
-
-$("#memories-btn").onclick = async () => {
-  $("#mem-search").value = "";
-  await refreshMemories();
-  memDlg.showModal();
-  $("#mem-add-text").focus();
-};
-
-$("#mem-close").onclick = () => memDlg.close();
-$("#mem-search").oninput = renderMemoryList;
-$("#mem-category").onchange = refreshMemories;
-
-$("#memory-form").onsubmit = async (e) => {
-  e.preventDefault();
-  const text = $("#mem-add-text").value.trim();
-  if (!text) return;
-  try {
-    const result = await api("/api/memories", {
-      method: "POST",
-      body: JSON.stringify({
-        category: $("#mem-add-cat").value,
-        content: text,
-        confidence: 0.8,
-      }),
-    });
-    $("#mem-status").textContent = `${result.status} memory ${result.id}`;
-    $("#mem-add-text").value = "";
-    await refreshMemories();
-    await refreshStats();
-  } catch (err) {
-    $("#mem-status").textContent = err.message;
-  }
-};
-
-$("#mem-export").onclick = async () => {
-  const data = await api("/api/memories/export");
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `atlas-memories-${$("#profile").value}.json`;
-  link.click();
-};
-
-$("#profile").onchange = async (e) => {
-  await api("/api/profiles", {
-    method: "POST",
-    body: JSON.stringify({ action: "switch", id: e.target.value }),
-  });
-  location.reload();
-};
-
-/* ---------------------------------------------------------------- streaming */
+/* ------------------------------------------------------------- sending */
 
 async function send(text) {
   if (state.sending) return;
@@ -354,42 +428,29 @@ async function send(text) {
   state.sending = true;
   $("#stop").hidden = false;
   $("#send").hidden = true;
-  $("#status").textContent = "thinking";
-  $("#status").classList.add("live");
-  document.querySelector(".empty")?.remove();
-
   bubble("user", text);
   const reply = bubble("assistant", "");
   reply.body.classList.add("caret");
 
   state.controller = new AbortController();
-
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: state.current,
-        message: text,
-        mode: state.mode,
-      }),
+      body: JSON.stringify({ session_id: state.current, message: text, mode: state.mode }),
       signal: state.controller.signal,
     });
-
     if (!res.ok || !res.body) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `http ${res.status}`);
     }
-
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-
       let cut;
       while ((cut = buffer.indexOf("\n\n")) >= 0) {
         const block = buffer.slice(0, cut);
@@ -407,57 +468,300 @@ async function send(text) {
     state.controller = null;
     $("#stop").hidden = true;
     $("#send").hidden = false;
-    $("#status").textContent = "";
-    $("#status").classList.remove("live");
     await refreshSessions();
     await refreshStats();
   }
 }
 
 function parseEvent(block) {
-  let name = "message";
-  let data = "";
+  let name = "message", data = "";
   for (const line of block.split("\n")) {
     if (line.startsWith("event:")) name = line.slice(6).trim();
     else if (line.startsWith("data:")) data += line.slice(5).trim();
   }
   if (!data) return null;
-  try {
-    return { name, data: JSON.parse(data) };
-  } catch {
-    return null;
-  }
+  try { return { name, data: JSON.parse(data) }; } catch { return null; }
 }
 
 function handleEvent(block, reply) {
-  const parsed = parseEvent(block);
-  if (!parsed) return;
-  const event = parsed.name;
-  const payload = parsed.data;
-
-  if (event === "delta") {
-    reply.text += payload.text;
+  const event = parseEvent(block);
+  if (!event) return;
+  const { name, data } = event;
+  if (name === "delta") {
+    reply.text += data.text;
     reply.body.innerHTML = md(reply.text);
     scrollDown();
-  } else if (event === "tool") {
-    toolLine(payload.name, payload.result);
-  } else if (event === "memory") {
-    const line = document.createElement("div");
-    line.className = "tool";
-    line.innerHTML = `<b>used ${payload.count}</b> saved memories · ${esc(payload.categories.join(", "))}`;
-    $("#messages").appendChild(line);
-  } else if (event === "error") {
-    reply.body.innerHTML = `<span style="color:var(--danger)">${esc(payload.message)}</span>`;
-  } else if (event === "done") {
-    reply.text = payload.text;
-    reply.body.innerHTML = md(reply.text);
-    $("#title").textContent = $("#title").textContent === "new chat"
-      ? payload.text.slice(0, 60)
-      : $("#title").textContent;
+  } else if (name === "tool") {
+    toolLine(data.name, data.result);
+  } else if (name === "memory") {
+    memoryLine(data);
+  } else if (name === "error") {
+    reply.body.innerHTML = `<span style="color:var(--danger)">${esc(data.message)}</span>`;
+  } else if (name === "done") {
+    reply.text = data.text;
+    reply.body.innerHTML = md(data.text);
+    if ($("#title").textContent === "New chat") $("#title").textContent = data.text.slice(0, 54);
   }
 }
 
-/* ---------------------------------------------------------------- events */
+/* ------------------------------------------------------------- memory */
+
+const GROUPS = {
+  "About you": ["identity", "education"],
+  "Preferences": ["preferences", "communication", "learning"],
+  "Projects": ["projects", "last-seat", "atlas", "games-renderer", "audio"],
+  "Goals": ["goals", "ambitions", "decisions"],
+  "Environment": ["temporary", "health", "programming", "dev-interests", "tennis", "tennis-goals", "memory-rules"],
+};
+
+async function refreshMemories() {
+  const filter = selects.memCategory?.value || "";
+  const data = await api("/api/memories" + (filter ? `?category=${encodeURIComponent(filter)}` : ""));
+  state.memories = data.memories;
+  state.categories = data.categories;
+  selects.memCategory?.setOptions([
+    { value: "", label: "All categories" },
+    ...data.categories.map((c) => ({ value: c, label: c })),
+  ]);
+  selects.memCategory?.setValue(filter);
+  selects.memAddCategory?.setOptions(data.categories.map((c) => ({ value: c, label: c })));
+  selects.memAddCategory?.setValue("temporary");
+  renderMemoryGroups();
+}
+
+function renderMemoryGroups() {
+  const q = ($("#mem-filter")?.value || "").toLowerCase();
+  const items = state.memories.filter((m) => !q || m.content.toLowerCase().includes(q));
+  const grouped = new Map();
+  items.forEach((m) => {
+    const section = Object.keys(GROUPS).find((key) => GROUPS[key].includes(m.category)) || "Other";
+    if (!grouped.has(section)) grouped.set(section, []);
+    grouped.get(section).push(m);
+  });
+  const host = $("#workspace-body");
+  if (!items.length) {
+    host.innerHTML = `<div class="empty-state">${icon("memory")}<strong>No memories here yet</strong><span>Tell Atlas something durable and it will appear here in plain language.</span></div>`;
+    return;
+  }
+  host.innerHTML = `<div class="memory-groups">${[...grouped].map(([section, rows]) => `
+    <section class="memory-group">
+      <h3>${esc(section)}</h3>
+      ${rows.map((m) => `<div class="memory-item">
+        <span class="text">${esc(m.content)}</span>
+        <time>${esc((m.updated || "").slice(0, 10))}</time>
+        <button data-id="${m.id}" title="Forget">${icon("close")}</button>
+      </div>`).join("")}
+    </section>`).join("")}</div>`;
+
+  host.querySelectorAll(".memory-item button").forEach((button) => {
+    button.onclick = async () => {
+      if (!confirm("Forget this memory?")) return;
+      await api(`/api/memories/${button.dataset.id}`, { method: "DELETE" });
+      await refreshMemories();
+      await refreshStats();
+    };
+  });
+}
+
+async function exportMemories() {
+  const data = await api("/api/memories/export");
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `atlas-memories-${state.profileId}.json`;
+  link.click();
+}
+
+/* --------------------------------------------------------------- tools */
+
+const TOOL_CATALOG = [
+  { icon: "memory", name: "Memory", desc: "Remember, recall, correct and forget durable facts.", available: true },
+  { icon: "pulse", name: "Recent activity", desc: "Local git commits and recently edited files.", available: true },
+  { icon: "plug", name: "Model runtime", desc: "Connect Ollama, LM Studio, llama.cpp or vLLM.", available: true, live: true },
+  { icon: "globe", name: "Web search", desc: "Search the internet during a conversation.", available: false },
+  { icon: "file", name: "Web fetch", desc: "Read a public page and cite its contents.", available: false },
+  { icon: "folder", name: "Filesystem", desc: "Read and edit files in a chosen workspace.", available: false },
+  { icon: "terminal", name: "Terminal", desc: "Run commands in a sandboxed shell.", available: false },
+  { icon: "git", name: "Git / GitHub", desc: "Branches, diffs, issues and pull requests.", available: false },
+  { icon: "image", name: "Image generation", desc: "Create and edit images locally.", available: false },
+  { icon: "code", name: "Code execution", desc: "Run and verify generated code.", available: false },
+  { icon: "database", name: "Last Seat MCP", desc: "Connect the autonomous agent economy project.", available: false },
+  { icon: "plug", name: "Other MCP servers", desc: "Bring your own tool servers.", available: false },
+];
+
+function renderTools() {
+  const active = state.runtimes.find((r) => r.ok);
+  $("#tools-badge").textContent = String(TOOL_CATALOG.filter((t) => t.available).length);
+  const card = (t) => {
+    let status = t.available ? "Available" : "Not configured";
+    let quiet = !t.available;
+    if (t.live) {
+      status = active ? `${active.name} · local` : "No runtime detected";
+      quiet = !active;
+    }
+    return `<article class="card">
+      <div class="card-head">${icon(t.icon)}<h3>${esc(t.name)}</h3></div>
+      <p>${esc(t.desc)}</p>
+      <span class="pill ${quiet ? "quiet" : ""}">${esc(status)}</span>
+      <div class="card-foot"><button class="text-btn" ${t.available ? "" : "disabled"}>
+        ${t.available ? "In use" : "Configure"}</button></div>
+    </article>`;
+  };
+  $("#workspace-body").innerHTML = `
+    <div class="group-label">Available on this machine</div>
+    <div class="card-grid">${TOOL_CATALOG.filter((t) => t.available).map(card).join("")}</div>
+    <div class="group-label">Coming next — UI prepared, not implemented</div>
+    <div class="card-grid">${TOOL_CATALOG.filter((t) => !t.available).map(card).join("")}</div>
+    <div class="group-label">Project workspace</div>
+    <div class="card">
+      <div class="card-head">${icon("git")}<h3>No repository connected</h3></div>
+      <p>Repository, branch and changed-file status will appear here when Git tools are added.</p>
+    </div>`;
+}
+
+/* ----------------------------------------------------------- artifacts */
+
+const artifacts = []; // real artifacts will be supplied by the backend later
+
+function artifactCard(a) {
+  return `<div class="artifact-card">${icon(a.kind === "image" ? "image" : a.kind === "code" ? "code" : "file")}
+    <span class="a-name">${esc(a.name)}</span><span class="pill">${esc(a.type)}</span>
+    <button class="text-btn">Open</button></div>`;
+}
+
+function renderArtifactList(items) {
+  $("#workspace-body").innerHTML = `<div class="artifact-list">${items.map((a) => `
+    <div class="artifact-row">${icon(a.kind === "image" ? "image" : "file")}
+      <span class="a-name">${esc(a.name)}</span>
+      <span class="a-meta">${esc(a.type)}</span>
+      <span class="a-meta">${esc(a.modified || "")}</span>
+    </div>`).join("")}</div>`;
+}
+
+function renderArtifactPreview(a) {
+  $("#workspace-body").innerHTML = `<div class="artifact-preview">
+    <div class="card-head">${icon("file")}<h3>${esc(a.name)}</h3></div>
+    <pre>${esc(a.content || "")}</pre></div>`;
+}
+
+function renderArtifacts() {
+  if (!artifacts.length) {
+    $("#workspace-body").innerHTML = `<div class="empty-state">${icon("artifacts")}
+      <strong>No artifacts yet</strong>
+      <span>Documents, code, images and exports Atlas creates will be listed here with a preview.</span>
+    </div>`;
+    return;
+  }
+  renderArtifactList(artifacts);
+}
+
+/* ------------------------------------------------------------- settings */
+
+const dlg = $("#configure");
+let runtimeCache = { at: 0, list: [] };
+
+async function renderRuntimes() {
+  if (Date.now() - runtimeCache.at > 30000 || !runtimeCache.list.length) {
+    runtimeCache = { at: Date.now(), list: (await api("/api/runtimes")).runtimes };
+    state.runtimes = runtimeCache.list;
+  }
+  $("#cfg-runtimes").innerHTML = runtimeCache.list.map((r, i) => `
+    <button type="button" class="runtime ${r.ok ? "" : "off"} ${r.active ? "active" : ""}" data-runtime="${i}">
+      <b>${esc(r.name)}</b><small>${r.ok ? `${r.models.length} models` : "offline"}</small>
+    </button>`).join("");
+  $("#cfg-runtimes").querySelectorAll("button").forEach((button) => {
+    button.onclick = async () => {
+      const r = runtimeCache.list[Number(button.dataset.runtime)];
+      const status = $("#cfg-status");
+      status.textContent = `Connecting to ${r.name}…`;
+      try {
+        const info = await api(`/api/models?base_url=${encodeURIComponent(r.base_url)}`);
+        $("#cfg-url").value = r.base_url;
+        $("#cfg-key").value = "";
+        $("#cfg-model").value = info.models[0] || "";
+        status.textContent = r.ok
+          ? `${r.name}: ${info.models.length} models available — save to connect`
+          : `${r.name} is not running on ${r.base_url}`;
+      } catch (err) { status.textContent = err.message; }
+    };
+  });
+}
+
+async function openSettings() {
+  const info = await api("/api/models");
+  $("#cfg-url").value = info.base_url || "";
+  $("#cfg-model").value = info.model || "";
+  $("#cfg-key").value = "";
+  $("#cfg-status").textContent = info.reachable
+    ? `${info.models.length} models found` : "No local model server detected";
+  await renderRuntimes();
+  dlg.showModal();
+}
+
+$("#cfg-cancel").onclick = () => dlg.close();
+$("#cfg-dismiss").onclick = () => dlg.close();
+
+$("#cfg-pull-btn").onclick = async () => {
+  const name = $("#cfg-pull").value.trim();
+  if (!name) return;
+  const status = $("#cfg-status"), button = $("#cfg-pull-btn");
+  button.disabled = true;
+  status.textContent = `Pulling ${name}…`;
+  try {
+    const res = await fetch("/api/models/pull", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: name }),
+    });
+    if (!res.ok || !res.body) throw new Error(`http ${res.status}`);
+    const reader = res.body.getReader(), decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const event = parseEvent(buffer.slice(0, cut));
+        buffer = buffer.slice(cut + 2);
+        if (!event) continue;
+        if (event.name === "pull") {
+          const d = event.data;
+          status.textContent = `${d.status}${d.total ? ` ${Math.round(100 * d.completed / d.total)}%` : ""}`;
+        } else if (event.name === "error") status.textContent = event.data.message;
+        else if (event.name === "done") {
+          status.textContent = `${event.data.model} installed`;
+          $("#cfg-model").value = event.data.model;
+          await refreshModels();
+          runtimeCache.at = 0;
+        }
+      }
+    }
+  } catch (err) { status.textContent = err.message; }
+  finally { button.disabled = false; }
+};
+
+$("#config-form").onsubmit = async (e) => {
+  e.preventDefault();
+  $("#cfg-status").textContent = "Saving…";
+  try {
+    await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        base_url: $("#cfg-url").value.trim(),
+        api_key: $("#cfg-key").value.trim(),
+        model: $("#cfg-model").value.trim(),
+      }),
+    });
+    await refreshModels();
+    await refreshStats();
+    runtimeCache.at = 0;
+    await refreshRuntimes();
+    dlg.close();
+  } catch (err) { $("#cfg-status").textContent = err.message; }
+};
+
+/* --------------------------------------------------------------- events */
 
 $("#composer").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -470,189 +774,101 @@ $("#composer").addEventListener("submit", async (e) => {
 });
 
 $("#input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    $("#composer").requestSubmit();
-  }
-  if (e.key === "Escape" && state.sending) {
-    state.controller?.abort();
-  }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#composer").requestSubmit(); }
+  if (e.key === "Escape" && state.sending) state.controller?.abort();
 });
-
 $("#input").addEventListener("input", (e) => {
   e.target.style.height = "auto";
   e.target.style.height = Math.min(e.target.scrollHeight, innerHeight * 0.4) + "px";
 });
-
-$("#new-chat").onclick = newChat;
-$("#menu").onclick = () => $("#sidebar").classList.toggle("open");
-
-$("#filter").oninput = (e) => {
-  state.filter = e.target.value;
-  renderSessions();
-};
-
-$("#mode").onchange = async (e) => {
-  state.mode = e.target.value;
-  $("#mode-chip").textContent = state.mode;
-  if (state.current) {
-    await api(`/api/sessions/${state.current}`, {
-      method: "PATCH",
-      body: JSON.stringify({ mode: state.mode }),
-    });
-    await refreshSessions();
-  }
-};
-
-$("#model-pick").onchange = async (e) => {
-  const model = e.target.value || "";
-  if (!state.current) return;
-  await api(`/api/sessions/${state.current}`, {
-    method: "PATCH",
-    body: JSON.stringify({ model }),
-  });
-  await refreshSessions();
-};
-
-/* ---------------------------------------------------------------- settings */
-
-const dlg = $("#configure");
-let runtimeCache = { at: 0, list: [] };
-
-async function renderRuntimes() {
-  if (Date.now() - runtimeCache.at > 30000 || !runtimeCache.list.length) {
-    runtimeCache = { at: Date.now(), list: (await api("/api/runtimes")).runtimes };
-  }
-  $("#cfg-runtimes").innerHTML = runtimeCache.list.map((r, i) => `
-    <button type="button" class="runtime ${r.ok ? "" : "off"} ${r.active ? "active" : ""}"
-            data-runtime="${i}" title="${esc(r.base_url)}">
-      <b>${esc(r.name)}</b><small>${r.ok ? r.models.length + " models" : "offline"}</small>
-    </button>`).join("");
-
-  $("#cfg-runtimes").querySelectorAll("button").forEach((button) => {
-    button.onclick = async () => {
-      const r = runtimeCache.list[Number(button.dataset.runtime)];
-      const status = $("#cfg-status");
-      status.textContent = `connecting to ${r.name}…`;
-      try {
-        const info = await api(`/api/models?base_url=${encodeURIComponent(r.base_url)}`);
-        $("#cfg-url").value = r.base_url;
-        $("#cfg-key").value = "";
-        $("#cfg-models").innerHTML = info.models
-          .map((m) => `<option>${esc(m)}</option>`).join("");
-        if (info.models.length) $("#cfg-model").value = info.models[0];
-        status.textContent = r.ok
-          ? `${r.name}: ${info.models.length} available — pick one and save`
-          : `${r.name} is not running on ${r.base_url}`;
-      } catch (err) {
-        status.textContent = err.message;
-      }
-    };
-  });
-}
-
-$("#settings").onclick = async () => {
-  const info = await api("/api/models");
-  renderModels(info);
-  $("#cfg-url").value = info.base_url;
-  $("#cfg-model").value = info.model;
-  $("#cfg-key").value = "";
-  $("#cfg-status").textContent = info.reachable
-    ? `${info.models.length} model${info.models.length === 1 ? "" : "s"} found`
-    : "not reachable — check the endpoint";
-  await renderRuntimes();
-  dlg.showModal();
-};
-
-$("#cfg-cancel").onclick = () => dlg.close();
-
-$("#cfg-pull-btn").onclick = async () => {
-  const name = $("#cfg-pull").value.trim();
-  if (!name) return;
-  const status = $("#cfg-status");
-  const button = $("#cfg-pull-btn");
-  button.disabled = true;
-  status.textContent = `pulling ${name}…`;
-
-  try {
-    const res = await fetch("/api/models/pull", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: name }),
-    });
-    if (!res.ok || !res.body) throw new Error(`http ${res.status}`);
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let cut;
-      while ((cut = buffer.indexOf("\n\n")) >= 0) {
-        const block = buffer.slice(0, cut);
-        buffer = buffer.slice(cut + 2);
-        const event = parseEvent(block);
-        if (!event) continue;
-        if (event.name === "pull") {
-          const d = event.data;
-          const pct = d.total ? ` ${Math.round((100 * d.completed) / d.total)}%` : "";
-          status.textContent = `${d.status}${pct}`;
-        } else if (event.name === "error") {
-          status.textContent = event.data.message;
-        } else if (event.name === "done") {
-          status.textContent = `${event.data.model} installed`;
-          renderModels({ ...event.data, base_url: $("#cfg-url").value });
-          $("#cfg-model").value = event.data.model;
-        }
-      }
-    }
-  } catch (err) {
-    status.textContent = err.message;
-  } finally {
-    button.disabled = false;
-  }
-};
-
-$("#config-form").onsubmit = async (e) => {
-  e.preventDefault();
-  $("#cfg-status").textContent = "saving…";
-  try {
-    await api("/api/settings", {
-      method: "POST",
-      body: JSON.stringify({
-        base_url: $("#cfg-url").value.trim(),
-        api_key: $("#cfg-key").value.trim(),
-        model: $("#cfg-model").value.trim(),
-      }),
-    });
-    await refreshModels();
-    await refreshStats();
-    dlg.close();
-  } catch (err) {
-    $("#cfg-status").textContent = err.message;
-  }
-};
+$("#stop").onclick = () => state.controller?.abort();
+$("#new-chat").onclick = () => { setView("chat"); newChat(); };
+$("#filter").oninput = (e) => { state.filter = e.target.value; renderSessions(); };
 
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-    e.preventDefault();
-    newChat();
+    e.preventDefault(); setView("chat"); newChat();
   }
 });
 
-/* ---------------------------------------------------------------- boot */
+/* ----------------------------------------------------------------- boot */
 
 (async function boot() {
-  startLifecycle();
+  startLease();
+
+  selects.mode = makeSelect($("#mode-select"), {
+    placeholder: "Coach",
+    onChange: async (mode) => {
+      state.mode = mode;
+      if (!state.current) return;
+      await api(`/api/sessions/${state.current}`, {
+        method: "PATCH", body: JSON.stringify({ mode }),
+      });
+      await refreshSessions();
+    },
+  });
+
+  selects.model = makeSelect($("#model-select"), {
+    placeholder: "Model",
+    onChange: async (model) => {
+      state.modelChoice = model;
+      if (!state.current) return;
+      await api(`/api/sessions/${state.current}`, {
+        method: "PATCH", body: JSON.stringify({ model }),
+      });
+      await refreshSessions();
+    },
+  });
+
+  selects.profile = makeSelect($("#profile-select"), {
+    placeholder: "Personal",
+    onChange: async (id) => {
+      await api("/api/profiles", {
+        method: "POST", body: JSON.stringify({ action: "switch", id }),
+      });
+      location.reload();
+    },
+  });
+
+  selects.memCategory = makeSelect($("#mem-filter-select"), {
+    onChange: () => refreshMemories(),
+  });
+  selects.memAddCategory = makeSelect($("#mem-add-select"), {});
+
+  $("#mem-filter").oninput = () => renderMemoryGroups();
+  $("#mem-add-btn").onclick = async () => {
+    const text = $("#mem-add-text").value.trim();
+    if (!text) return;
+    try {
+      await api("/api/memories", {
+        method: "POST",
+        body: JSON.stringify({
+          category: selects.memAddCategory.value || "temporary",
+          content: text,
+          confidence: 0.8,
+        }),
+      });
+      $("#mem-add-text").value = "";
+      await refreshMemories();
+      await refreshStats();
+    } catch (err) { alert(err.message); }
+  };
+
   await refreshStats();
   await refreshProfiles();
   await refreshModels();
+  refreshRuntimes().catch(() => {});
   await refreshSessions();
   if (state.sessions.length) await openSession(state.sessions[0].id);
   else await newChat();
-  if (location.hash === "#settings") $("#settings").click();
-  if (location.hash === "#memories") $("#memories-btn").click();
+
+  if (location.hash === "#new") newChat();
+  const testMenu = new URLSearchParams(location.search).get("menu");
+  if (testMenu === "model" || location.hash === "#model-menu") selects.model.open();
+  if (testMenu === "mode" || location.hash === "#mode-menu") selects.mode.open();
+  if (testMenu === "profile" || location.hash === "#profile-menu") selects.profile.open();
+  if (location.hash === "#settings") openSettings();
+  if (location.hash === "#tools") setView("tools");
+  if (location.hash === "#artifacts") setView("artifacts");
+  if (location.hash === "#memory") setView("memory");
 })();
