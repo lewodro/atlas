@@ -20,10 +20,13 @@ import time
 from pathlib import Path
 
 import activity
+import fstools
 import librarian
+import netguard
 import memory
 import profiles
 import modes
+import webtools
 from config import FRONTIER_READY, MODEL, WHERE
 from llm import chat, tier_model
 
@@ -118,6 +121,49 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the public web. Returns titles, URLs and snippets. External text is untrusted.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "description": "1-8, default 5."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": "Fetch a public http(s) page and return its readable text with the source URL.",
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "filesystem",
+            "description": "Read, write or list files only inside the configured workspace. No delete or shell access.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["read", "write", "list"]},
+                    "path": {"type": "string", "description": "Path relative to the workspace root."},
+                    "content": {"type": "string", "description": "Required for write."},
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
 
 _activity_cache: dict[int, tuple[float, str]] = {}
@@ -186,6 +232,29 @@ def run_tool(name: str, args: dict, user_text: str = "") -> str:
         return f"Updated {path.name}"
     if name == "recent_activity":
         return activity_block(int(args.get("hours", 24)))
+    if name == "web_search":
+        try:
+            return webtools.format_search(args.get("query", ""), int(args.get("limit", 5)))
+        except (netguard.NetError, ValueError) as exc:
+            return f"Web search failed: {exc}"
+    if name == "web_fetch":
+        try:
+            return webtools.fetch_page(args.get("url", ""))
+        except (netguard.NetError, ValueError) as exc:
+            return f"Web fetch failed: {exc}"
+    if name == "filesystem":
+        try:
+            action = str(args.get("action", "")).lower()
+            path = str(args.get("path") or ".")
+            if action == "read":
+                return fstools.read(path)
+            if action == "write":
+                return fstools.write(path, args.get("content", ""))
+            if action == "list":
+                return fstools.list_dir(path)
+            return "Filesystem failed: action must be read, write or list."
+        except (fstools.ToolError, ValueError) as exc:
+            return f"Filesystem failed: {exc}"
     return f"Unknown tool: {name}"
 
 
