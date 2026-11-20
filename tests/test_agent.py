@@ -36,6 +36,24 @@ class Registry(unittest.TestCase):
             "git_status", "git_diff", "git_log",
         } <= ids)
 
+    def test_provider_registration(self):
+        spec = registry.ToolSpec(
+            id="future_provider_tool", description="A future provider tool.",
+            parameters={"type": "object", "properties": {}},
+            handler=lambda args: "registered", provider="future",
+        )
+        with patch.object(registry, "_SPECS", {}):
+            registry.register(spec)
+            self.assertTrue(any(d["function"]["name"] == spec.id for d in registry.definitions()))
+            result = registry.run(spec.id, {})
+            self.assertEqual(result["data"], "registered")
+            self.assertEqual(result["provider"], "future")
+
+    def test_structured_error(self):
+        result = registry.run("does_not_exist", {})
+        self.assertFalse(result["ok"])
+        self.assertIn("unknown tool", result["error"])
+
     def test_ask_and_deny(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
