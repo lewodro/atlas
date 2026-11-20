@@ -132,12 +132,22 @@ class ProfileMemory(unittest.TestCase):
 
 class OfflineMemory(unittest.TestCase):
     def test_retrieval_works_with_no_network_sockets(self):
-        def blocked(*args, **kwargs):
-            raise AssertionError("external network call during memory retrieval")
-
-        with patch("socket.socket.connect", side_effect=blocked):
-            context = memory.recall("where did I live before Edmonton")
-        self.assertTrue(context)
+        tmp = tempfile.TemporaryDirectory()
+        root = Path(tmp.name)
+        with (
+            patch.object(profiles, "DB", root / "atlas.db"),
+            patch.object(profiles, "ACTIVE_FILE", root / "profile.json"),
+            patch.object(memory, "NOTES", root / "notes"),
+        ):
+            profiles.migrate()
+            (root / "notes").mkdir()
+            profiles.add("default", "identity", "The user lived in Vancouver before Edmonton.")
+            def blocked(*args, **kwargs):
+                raise AssertionError("external network call during memory retrieval")
+            with patch("socket.socket.connect", side_effect=blocked):
+                context = memory.recall("where did I live before Edmonton")
+            self.assertIn("Vancouver", context)
+        tmp.cleanup()
 
 
 class VaultIsolation(unittest.TestCase):
