@@ -31,6 +31,9 @@ case "${1:-}" in
   test)   shift; exec uv run python -m unittest discover -s tests "$@" ;;
   models) shift; exec uv run python models.py "$@" ;;
   tools)  shift; exec uv run python tools_cli.py tools "$@" ;;
+  skills) shift; exec uv run python tools_cli.py skills "$@" ;;
+  artifacts) shift; exec uv run python tools_cli.py artifacts "$@" ;;
+  workspace) shift; exec uv run python tools_cli.py workspace "$@" ;;
   net)    shift; exec uv run python tools_cli.py net "$@" ;;
   fs)     shift; exec uv run python tools_cli.py fs "$@" ;;
   user)   shift; exec uv run python memory_cli.py user "$@" ;;

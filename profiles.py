@@ -35,7 +35,7 @@ CATEGORIES = {
 
 # Generic question → category hints. No personal data lives here.
 HINTS = {
-    "study": "education", "studies": "education", "student": "education",
+    "study": "education", "studies": "education", "studying": "education", "student": "education",
     "university": "education", "course": "education", "degree": "education",
     "learn": "learning", "learning": "learning", "prefer": "learning",
     "project": "projects", "projects": "projects", "building": "projects",
