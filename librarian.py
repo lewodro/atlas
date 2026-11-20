@@ -81,6 +81,17 @@ def extract(message: str, limit: int = 3) -> list[str]:
     if len(message) < 12:
         return []
 
+    # Explicit requests are facts even when a 2B model fails at JSON mode.
+    explicit = re.search(
+        r"\b(?:please\s+)?(?:remember|note|save)\s+that\s+(.+?)\s*[.!?]?$",
+        message, re.IGNORECASE,
+    )
+    if explicit:
+        fact = explicit.group(1).strip().rstrip(".!?")
+        if not fact.lower().startswith(("the user", "i ", "my ")):
+            fact = "The user " + fact[0].lower() + fact[1:]
+        return [fact[:240]]
+
     try:
         reply = chat(
             [

@@ -20,6 +20,10 @@
     <nav id="sessions" aria-label="saved chats"></nav>
 
     <footer class="side-foot">
+      <div class="profile-row">
+        <select id="profile" title="active profile"></select>
+        <button id="memories-btn" type="button" title="saved memories">mem</button>
+      </div>
       <div id="stats" class="stats"></div>
       <div id="model" class="model"></div>
     </footer>
@@ -78,6 +82,28 @@
     <menu>
       <button type="button" id="cfg-cancel">cancel</button>
       <button type="submit" id="cfg-save">save</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="memories">
+  <form id="memory-form">
+    <h2>saved memories</h2>
+    <p class="hint" id="mem-profile"></p>
+    <div class="row">
+      <input id="mem-search" placeholder="filter…" spellcheck="false" />
+      <select id="mem-category"></select>
+    </div>
+    <div id="mem-list"></div>
+    <div class="row">
+      <select id="mem-add-cat"></select>
+      <input id="mem-add-text" placeholder="remember that…" spellcheck="false" />
+      <button type="submit">add</button>
+    </div>
+    <p class="hint" id="mem-status"></p>
+    <menu>
+      <button type="button" id="mem-export">export</button>
+      <button type="button" id="mem-close">close</button>
     </menu>
   </form>
 </dialog>

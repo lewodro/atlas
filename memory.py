@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
+import profiles
 from config import API_KEY, BASE_URL, ROOT_DATA, ROOT_NOTES
 
 DB_PATH = ROOT_DATA / "atlas.db"
@@ -27,6 +28,15 @@ EMBED_CACHE = ROOT_DATA / "embeddings.json"
 EMBED_MODEL = os.getenv("ATLAS_EMBED_MODEL", "nomic-embed-text")
 NOTES.mkdir(parents=True, exist_ok=True)
 ROOT_DATA.mkdir(parents=True, exist_ok=True)
+
+
+def notes_root() -> Path:
+    """The active profile's Markdown vault. Default keeps the original folder;
+    every other profile gets its own isolated directory."""
+    user = profiles.active()
+    root = NOTES if user == "default" else NOTES / "_profiles" / user
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 DIGEST_NAME = "_digest.md"
 
@@ -41,6 +51,7 @@ def _conn() -> sqlite3.Connection:
             role    TEXT NOT NULL,
             content TEXT NOT NULL,
             session_id TEXT NOT NULL DEFAULT 'cli',
+            user_id TEXT NOT NULL DEFAULT 'default',
             ts      TEXT NOT NULL DEFAULT (datetime('now'))
         )
         """
@@ -51,8 +62,24 @@ def _conn() -> sqlite3.Connection:
 def log_turn(role: str, content: str, mode: str = "coach", session_id: str = "cli") -> None:
     with _conn() as conn:
         conn.execute(
-            "INSERT INTO turns (mode, role, content, session_id) VALUES (?, ?, ?, ?)",
-            (mode, role, content, session_id),
+            """CREATE TABLE IF NOT EXISTS sessions (
+                   id TEXT PRIMARY KEY, title TEXT DEFAULT 'new chat',
+                   mode TEXT DEFAULT 'coach', created TEXT DEFAULT (datetime('now')),
+                   updated TEXT DEFAULT (datetime('now')), model TEXT,
+                   user_id TEXT DEFAULT 'default')"""
+        )
+        row = conn.execute("SELECT user_id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if not row:
+            user = profiles.active()
+            conn.execute(
+                "INSERT OR IGNORE INTO sessions (id, title, mode, user_id) VALUES (?, ?, ?, ?)",
+                (session_id, "terminal", "coach", user),
+            )
+        else:
+            user = row[0]
+        conn.execute(
+            "INSERT INTO turns (mode, role, content, session_id, user_id) VALUES (?, ?, ?, ?, ?)",
+            (mode, role, content, session_id, user),
         )
 
 
@@ -72,12 +99,28 @@ def load_recent(n: int = 16, session_id: str = "cli") -> list[dict]:
 CLI_SESSION = "cli"
 
 
+def cli_session() -> str:
+    """The permanent terminal chat, scoped to the active profile."""
+    user = profiles.active()
+    sid = CLI_SESSION if user == "default" else f"cli:{user}"
+    conn = _conn()
+    with conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO sessions (id, title, mode, user_id) VALUES (?, ?, ?, ?)",
+            (sid, "terminal", "coach", user),
+        )
+    return sid
+
+
 def _migrate() -> None:
     """Old databases predate sessions. Upgrade them in place."""
     with _conn() as conn:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(turns)")}
         if "session_id" not in cols:
             conn.execute("ALTER TABLE turns ADD COLUMN session_id TEXT DEFAULT 'cli'")
+        if "user_id" not in cols:
+            conn.execute("ALTER TABLE turns ADD COLUMN user_id TEXT DEFAULT 'default'")
+        conn.execute("CREATE INDEX IF NOT EXISTS turns_user ON turns(user_id, session_id)")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS sessions (
@@ -92,13 +135,17 @@ def _migrate() -> None:
         session_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
         if "model" not in session_cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
+        if "user_id" not in session_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT DEFAULT 'default'")
+        conn.execute("CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id)")
         conn.execute(
             "INSERT OR IGNORE INTO sessions (id, title, mode) VALUES (?, ?, ?)",
             (CLI_SESSION, "terminal", "coach"),
         )
 
 
-def list_sessions() -> list[dict]:
+def list_sessions(user_id: str | None = None) -> list[dict]:
+    user = user_id or profiles.active()
     with _conn() as conn:
         rows = conn.execute(
             """
@@ -106,8 +153,9 @@ def list_sessions() -> list[dict]:
                    (SELECT COUNT(*) FROM turns t
                      WHERE t.session_id = s.id AND t.role IN ('user','assistant')) AS n
             FROM sessions s
+            WHERE s.user_id = ?
             ORDER BY s.updated DESC
-            """
+            """, (user,)
         ).fetchall()
     return [
         {
@@ -123,13 +171,14 @@ def get_session(session_id: str) -> dict | None:
 
 
 def create_session(
-    mode: str = "coach", title: str = "new chat", model: str | None = None
+    mode: str = "coach", title: str = "new chat", model: str | None = None,
+    user_id: str | None = None,
 ) -> str:
     sid = dt.datetime.now().strftime("%y%m%d-%H%M%S-") + os.urandom(2).hex()
     with _conn() as conn:
         conn.execute(
-            "INSERT INTO sessions (id, title, mode, model) VALUES (?, ?, ?, ?)",
-            (sid, title, mode, model),
+            "INSERT INTO sessions (id, title, mode, model, user_id) VALUES (?, ?, ?, ?, ?)",
+            (sid, title, mode, model, user_id or profiles.active()),
         )
     return sid
 
@@ -142,20 +191,21 @@ def update_session(
 ) -> None:
     with _conn() as conn:
         if title is not None:
-            conn.execute("UPDATE sessions SET title = ? WHERE id = ?", (title[:80], session_id))
+            conn.execute("UPDATE sessions SET title = ? WHERE id = ? AND user_id = ?", (title[:80], session_id, profiles.active()))
         if mode is not None:
-            conn.execute("UPDATE sessions SET mode = ? WHERE id = ?", (mode, session_id))
+            conn.execute("UPDATE sessions SET mode = ? WHERE id = ? AND user_id = ?", (mode, session_id, profiles.active()))
         if model is not None:
-            conn.execute("UPDATE sessions SET model = ? WHERE id = ?", (model or None, session_id))
+            conn.execute("UPDATE sessions SET model = ? WHERE id = ? AND user_id = ?", (model or None, session_id, profiles.active()))
         conn.execute("UPDATE sessions SET updated = datetime('now') WHERE id = ?", (session_id,))
 
 
 def delete_session(session_id: str) -> None:
-    if session_id == CLI_SESSION:
+    if session_id in (CLI_SESSION, cli_session()):
         raise ValueError("the terminal session is permanent")
+    user = profiles.active()
     with _conn() as conn:
-        conn.execute("DELETE FROM turns WHERE session_id = ?", (session_id,))
-        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        conn.execute("DELETE FROM turns WHERE session_id = ? AND user_id = ?", (session_id, user))
+        conn.execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user))
 
 
 def session_messages(session_id: str) -> list[dict]:
@@ -170,15 +220,21 @@ def session_messages(session_id: str) -> list[dict]:
 
 def session_exists(session_id: str) -> bool:
     with _conn() as conn:
-        return conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone() is not None
+        return conn.execute(
+            "SELECT 1 FROM sessions WHERE id = ? AND user_id = ?",
+            (session_id, profiles.active()),
+        ).fetchone() is not None
 
 
 def stats() -> dict:
     with _conn() as conn:
         turns = conn.execute(
-            "SELECT COUNT(*) FROM turns WHERE role IN ('user','assistant')"
+            "SELECT COUNT(*) FROM turns WHERE role IN ('user','assistant') AND user_id = ?",
+            (profiles.active(),),
         ).fetchone()[0]
-        sessions = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        sessions = conn.execute(
+            "SELECT COUNT(*) FROM sessions WHERE user_id = ?", (profiles.active(),)
+        ).fetchone()[0]
     return {"turns": turns, "sessions": sessions, "notes": len(note_paths())}
 
 
@@ -188,7 +244,10 @@ _WORD = re.compile(r"[a-z0-9]{3,}")
 _STOP = set(
     "the a an is are was were user i my me we our you your it its of to in on at "
     "for and or that this these those be been has have had do does did as with "
-    "im about how what why when who where can could should would will".split()
+    "im about how what why when who where can could should would will "
+    "have has had much many work works working worked make makes made use "
+    "used uses using want wants need needs like get gets got thing things "
+    "really very also even still know think help".split()
 )
 
 
@@ -202,6 +261,10 @@ def _stem(word: str) -> str:
     Enough to keep the offline keyword fallback useful when no embedding
     model is running — which is exactly when you need it most.
     """
+    if len(word) > 5 and word.endswith("ying"):
+        return word[:-4] + "y"  # studying -> study
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"  # studies -> study
     if len(word) > 5 and word.endswith("ing"):
         return word[:-3]
     if len(word) > 4 and word.endswith(("ed", "er")):
@@ -216,9 +279,25 @@ def keywords(text: str) -> set[str]:
     return {_stem(word) for word in _words(text) - _STOP}
 
 
+def _category(path: Path) -> str:
+    match = re.search(r"(?m)^category:\s*([a-z0-9-]+)", path.read_text(
+        encoding="utf-8", errors="ignore"
+    )[:400])
+    return match.group(1) if match else ""
+
+
 def _body(path: Path) -> str:
+    """Note body plus its tags/category — both are retrieval signals."""
     text = path.read_text(encoding="utf-8", errors="ignore")
-    return text.split("---", 2)[-1].strip()
+    parts = text.split("---", 2)
+    if len(parts) != 3:
+        return text.strip()
+    tags = [
+        line.strip()
+        for line in parts[1].splitlines()
+        if line.strip().startswith(("tags:", "category:"))
+    ]
+    return (parts[2].strip() + "\n" + "\n".join(tags)).strip()
 
 
 def _slug(text: str) -> str:
@@ -231,7 +310,7 @@ def find_note(text: str) -> Path | None:
     target = keywords(text)
     if not target:
         return None
-    for path in NOTES.glob("*.md"):
+    for path in notes_root().glob("*.md"):
         if path.name.startswith("_"):
             continue
         other = keywords(_body(path))
@@ -252,7 +331,7 @@ def remember(text: str, tags: list[str] | None = None) -> Path:
         return existing
 
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = NOTES / f"{stamp}-{_slug(text)}.md"
+    path = notes_root() / f"{stamp}-{_slug(text)}.md"
     clean_tags = [
         t.strip().replace("]", "").replace("[", "")
         for t in (tags or [])
@@ -313,7 +392,7 @@ def update_note(ref: str, text: str, tags: list[str] | None = None) -> Path:
 
 def note_paths() -> list[Path]:
     """Real notes only: files starting with '_' are generated."""
-    return sorted(p for p in NOTES.glob("*.md") if not p.name.startswith("_"))
+    return sorted(p for p in notes_root().glob("*.md") if not p.name.startswith("_"))
 
 
 def recall(query: str, k: int = 5, budget: int = 2600) -> str:
@@ -348,6 +427,11 @@ def recall(query: str, k: int = 5, budget: int = 2600) -> str:
         used += len(body)
         if used >= budget:
             break
+    structured = profiles.context_block(profiles.active(), query, k=5)
+    if structured:
+        # Structured facts are already compact. Keep the raw note supplement
+        # small so a 2B model does not drown in context.
+        return structured + "\n\n" + "\n\n".join(chunks[:2])[:1200]
     return "\n\n".join(chunks)
 
 
@@ -369,7 +453,14 @@ def _recent(n: int) -> list[Path]:
 
 
 def _keyword_hits(query: str) -> list[tuple[float, Path]]:
-    wanted = keywords(query)
+    # Intent words are not facts, but they point at the right note category.
+    intent = ""
+    lowered = query.lower()
+    if "who am i" in lowered or "about me" in lowered or "my name" in lowered:
+        intent = " identity name born student "
+    elif "how do i prefer" in lowered or "how do i like" in lowered:
+        intent = " preferences "
+    wanted = keywords(intent + query)
     if not wanted:
         return []
     hits = []
@@ -386,7 +477,10 @@ def _keyword_hits(query: str) -> list[tuple[float, Path]]:
             ):
                 found.add(word)  # "mac" matches "macbook"
         if found:
-            hits.append((len(found) / (len(wanted) ** 0.5), path))
+            score = len(found) / (len(wanted) ** 0.5)
+            if _category(path) in wanted:
+                score += 0.6  # a note filed under this exact topic wins
+            hits.append((score, path))
     hits.sort(key=lambda row: (-row[0], -row[1].stat().st_mtime))
     return hits
 
@@ -402,7 +496,7 @@ def _semantic_hits(query: str, floor: float = 0.45) -> list[tuple[float, Path]]:
         for name, vec in vectors.items():
             score = float(np.dot(q, vec))
             if score >= floor:
-                scored.append((score, NOTES / name))
+                scored.append((score, Path(name)))
         scored.sort(key=lambda row: -row[0])
         return scored
     except Exception:
@@ -438,18 +532,20 @@ def _note_vectors() -> dict[str, np.ndarray]:
 
     for path in note_paths():
         mtime = path.stat().st_mtime
-        entry = cache.get(path.name)
+        key = str(path)
+        entry = cache.get(key)
         if entry and abs(entry["mtime"] - mtime) < 1:
-            vectors[path.name] = _normalise(np.array(entry["vec"], dtype=np.float32))
+            vectors[key] = _normalise(np.array(entry["vec"], dtype=np.float32))
         else:
             stale.append(path)
 
     if stale:
         fresh = _embed([_body(p) for p in stale])
         for path, vec in zip(stale, fresh):
-            vectors[path.name] = _normalise(np.array(vec, dtype=np.float32))
-            cache[path.name] = {"mtime": path.stat().st_mtime, "vec": vec}
-        keep = {p.name for p in note_paths()}
+            key = str(path)
+            vectors[key] = _normalise(np.array(vec, dtype=np.float32))
+            cache[key] = {"mtime": path.stat().st_mtime, "vec": vec}
+        keep = {str(p) for p in note_paths()}
         cache = {k: v for k, v in cache.items() if k in keep}
         EMBED_CACHE.parent.mkdir(parents=True, exist_ok=True)
         EMBED_CACHE.write_text(json.dumps(cache))
@@ -458,7 +554,7 @@ def _note_vectors() -> dict[str, np.ndarray]:
 
 
 def digest(max_chars: int = 1200) -> str:
-    path = NOTES / DIGEST_NAME
+    path = notes_root() / DIGEST_NAME
     if not path.exists():
         return ""
     return path.read_text(encoding="utf-8", errors="ignore")[:max_chars]
@@ -482,7 +578,7 @@ if __name__ == "__main__":
         print(f"turns : {turns}")
         print(f"notes : {len(note_paths())}")
         print(f"db    : {DB_PATH}")
-        print(f"vault : {NOTES}")
+        print(f"vault : {notes_root()}")
     elif len(sys.argv) > 1:
         print(recall(" ".join(sys.argv[1:])) or "(no matches)")
     else:

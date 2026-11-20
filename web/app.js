@@ -13,6 +13,9 @@ const state = {
   sending: false,
   controller: null,
   filter: "",
+  profiles: [],
+  memories: [],
+  categories: [],
 };
 
 let lifecycleTimer = null;
@@ -113,6 +116,47 @@ function renderSessions() {
     };
     nav.appendChild(el);
   }
+}
+
+async function refreshProfiles() {
+  const data = await api("/api/profiles");
+  state.profiles = data.profiles;
+  const select = $("#profile");
+  select.innerHTML = state.profiles
+    .map((p) => `<option value="${esc(p.id)}" ${p.active ? "selected" : ""}>${esc(p.name)}</option>`)
+    .join("");
+}
+
+async function refreshMemories() {
+  const category = $("#mem-category").value;
+  const data = await api("/api/memories" + (category ? `?category=${encodeURIComponent(category)}` : ""));
+  state.memories = data.memories;
+  state.categories = data.categories;
+  $("#mem-profile").textContent = `profile ${data.profile} · ${data.memories.length} stored facts`;
+  const options = () => `<option value="">all</option>` +
+    state.categories.map((c) => `<option ${c === category ? "selected" : ""}>${c}</option>`).join("");
+  $("#mem-category").innerHTML = options();
+  $("#mem-add-cat").innerHTML = state.categories
+    .map((c) => `<option ${c === "temporary" ? "selected" : ""}>${c}</option>`).join("");
+  renderMemoryList();
+}
+
+function renderMemoryList() {
+  const q = $("#mem-search").value.toLowerCase();
+  const list = state.memories.filter((m) => !q || m.content.toLowerCase().includes(q));
+  $("#mem-list").innerHTML = list.map((m) => `
+    <div class="memory">
+      <span class="tag">${esc(m.category)}</span>
+      <span class="text">${esc(m.content)}</span>
+      <button type="button" class="kill" data-id="${m.id}" title="forget">✕</button>
+    </div>`).join("") || `<p class="hint">nothing saved yet</p>`;
+  $("#mem-list").querySelectorAll(".kill").forEach((button) => {
+    button.onclick = async () => {
+      await api(`/api/memories/${button.dataset.id}`, { method: "DELETE" });
+      await refreshMemories();
+      await refreshStats();
+    };
+  });
 }
 
 function renderStats(data) {
@@ -247,6 +291,60 @@ async function removeSession(s) {
   }
 }
 
+/* ---------------------------------------------------------------- memories */
+
+const memDlg = $("#memories");
+
+$("#memories-btn").onclick = async () => {
+  $("#mem-search").value = "";
+  await refreshMemories();
+  memDlg.showModal();
+  $("#mem-add-text").focus();
+};
+
+$("#mem-close").onclick = () => memDlg.close();
+$("#mem-search").oninput = renderMemoryList;
+$("#mem-category").onchange = refreshMemories;
+
+$("#memory-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const text = $("#mem-add-text").value.trim();
+  if (!text) return;
+  try {
+    const result = await api("/api/memories", {
+      method: "POST",
+      body: JSON.stringify({
+        category: $("#mem-add-cat").value,
+        content: text,
+        confidence: 0.8,
+      }),
+    });
+    $("#mem-status").textContent = `${result.status} memory ${result.id}`;
+    $("#mem-add-text").value = "";
+    await refreshMemories();
+    await refreshStats();
+  } catch (err) {
+    $("#mem-status").textContent = err.message;
+  }
+};
+
+$("#mem-export").onclick = async () => {
+  const data = await api("/api/memories/export");
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `atlas-memories-${$("#profile").value}.json`;
+  link.click();
+};
+
+$("#profile").onchange = async (e) => {
+  await api("/api/profiles", {
+    method: "POST",
+    body: JSON.stringify({ action: "switch", id: e.target.value }),
+  });
+  location.reload();
+};
+
 /* ---------------------------------------------------------------- streaming */
 
 async function send(text) {
@@ -343,6 +441,11 @@ function handleEvent(block, reply) {
     scrollDown();
   } else if (event === "tool") {
     toolLine(payload.name, payload.result);
+  } else if (event === "memory") {
+    const line = document.createElement("div");
+    line.className = "tool";
+    line.innerHTML = `<b>used ${payload.count}</b> saved memories · ${esc(payload.categories.join(", "))}`;
+    $("#messages").appendChild(line);
   } else if (event === "error") {
     reply.body.innerHTML = `<span style="color:var(--danger)">${esc(payload.message)}</span>`;
   } else if (event === "done") {
@@ -545,9 +648,11 @@ document.addEventListener("keydown", (e) => {
 (async function boot() {
   startLifecycle();
   await refreshStats();
+  await refreshProfiles();
   await refreshModels();
   await refreshSessions();
   if (state.sessions.length) await openSession(state.sessions[0].id);
   else await newChat();
   if (location.hash === "#settings") $("#settings").click();
+  if (location.hash === "#memories") $("#memories-btn").click();
 })();

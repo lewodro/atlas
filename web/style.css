@@ -470,3 +470,91 @@ dialog#configure::backdrop { background: rgba(3, 7, 11, 0.72); }
 .runtime.active { border-color: var(--accent); }
 .runtime.active b { color: var(--accent); }
 .runtime.off { opacity: 0.45; }
+
+.profile-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.profile-row select { flex: 1; min-width: 0; font-size: 11px; padding: 3px; background: #0b1117; }
+#memories-btn { font-size: 11px; padding: 3px 8px; color: var(--dim); }
+
+#mem-list { max-height: 36vh; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+
+.memory {
+  display: grid;
+  grid-template-columns: 92px 1fr 20px;
+  gap: 6px;
+  align-items: start;
+  font-size: 11px;
+  padding: 5px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.memory .tag { color: var(--accent); }
+.memory .text { color: var(--fg); overflow-wrap: anywhere; }
+.memory .kill { border: none; color: var(--faint); padding: 0; }
+.memory .kill:hover { color: var(--danger); }
+
+/* memory inspector uses the same visual language as the model sheet */
+dialog#memories {
+  width: min(620px, 94vw);
+  padding: 0;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+dialog#memories::backdrop { background: rgba(3, 7, 11, 0.72); }
+
+#memory-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+}
+
+#memory-form h2 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+#memory-form .row {
+  display: flex;
+  gap: 6px;
+}
+
+#memory-form input,
+#memory-form select {
+  min-width: 0;
+  font: 12px var(--mono);
+  color: var(--fg);
+  background: #0b1117;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+#memory-form input { flex: 1; }
+
+#memory-form menu {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin: 0;
+  padding: 0;
+}
+
+#memory-form menu button {
+  font: 12px var(--mono);
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: none;
+}

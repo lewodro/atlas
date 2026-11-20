@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 
 import memory  # noqa: E402
 import models  # noqa: E402
+import profiles  # noqa: E402
 
 
 class Retrieval(unittest.TestCase):
@@ -84,3 +85,79 @@ class Discovery(unittest.TestCase):
             picked = models.load()
         self.assertEqual(picked["model"], "q:3b")
         self.assertEqual(picked["base_url"], "http://127.0.0.1:11434/v1")
+
+
+class ProfileMemory(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.patches = [
+            patch.object(profiles, "DB", root / "atlas.db"),
+            patch.object(profiles, "ACTIVE_FILE", root / "profile.json"),
+        ]
+        for item in self.patches:
+            item.start()
+        profiles.migrate()
+
+    def tearDown(self):
+        for item in reversed(self.patches):
+            item.stop()
+        self.tmp.cleanup()
+
+    def test_profiles_are_isolated(self):
+        alice = profiles.create("Alice")
+        bob = profiles.create("Bob")
+        profiles.add(alice, "identity", "Alice lives in Vancouver.")
+        profiles.add(bob, "identity", "Bob lives in Toronto.")
+        self.assertTrue(any("Vancouver" in r["content"] for r in profiles.search(alice, "Vancouver")))
+        self.assertFalse(any("Vancouver" in r["content"] for r in profiles.search(bob, "Vancouver")))
+        profiles.switch(bob)
+        self.assertEqual(profiles.active(), bob)
+        self.assertTrue(all(r["user_id"] == bob for r in profiles.list_all(bob)))
+
+    def test_secrets_are_rejected(self):
+        with self.assertRaises(ValueError):
+            profiles.add("default", "temporary", "my api key is sk-abcdef123456")
+
+    def test_correction_and_forget(self):
+        memory_id, status = profiles.add(
+            "default", "temporary", "Temporary codename is Blue Lantern 47."
+        )
+        self.assertEqual(status, "saved")
+        profiles.update(memory_id, "default", "Temporary codename is Blue Lantern 48.")
+        self.assertIn("48", profiles.get(memory_id, "default")["content"])
+        self.assertTrue(profiles.forget(memory_id, "default"))
+        self.assertIsNone(profiles.get(memory_id, "default"))
+
+
+class OfflineMemory(unittest.TestCase):
+    def test_retrieval_works_with_no_network_sockets(self):
+        def blocked(*args, **kwargs):
+            raise AssertionError("external network call during memory retrieval")
+
+        with patch("socket.socket.connect", side_effect=blocked):
+            context = memory.recall("where did I live before Edmonton")
+        self.assertTrue(context)
+
+
+class VaultIsolation(unittest.TestCase):
+    def test_markdown_vault_is_scoped_to_profile(self):
+        tmp = tempfile.TemporaryDirectory()
+        root = Path(tmp.name)
+        with (
+            patch.object(profiles, "DB", root / "atlas.db"),
+            patch.object(profiles, "ACTIVE_FILE", root / "profile.json"),
+            patch.object(memory, "NOTES", root / "notes"),
+            patch.object(memory, "EMBED_CACHE", root / "embeddings.json"),
+        ):
+            profiles.migrate()
+            (root / "notes").mkdir()
+            (root / "notes" / "default-fact.md").write_text(
+                "---\ntype: atlas-memory\n---\nThe user is Alice."
+            )
+            self.assertEqual(len(memory.note_paths()), 1)
+            other = profiles.create("Other")
+            profiles.switch(other)
+            self.assertEqual(memory.note_paths(), [])
+            self.assertNotIn("Alice", memory.recall("who am i"))
+        tmp.cleanup()

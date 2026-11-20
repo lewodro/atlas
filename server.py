@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import errno
 import json
+import re
 import sys
 import threading
 import time
@@ -36,6 +37,7 @@ import librarian
 import memory
 import models
 import modes
+import profiles
 from config import FRONTIER_READY, MODEL, WHERE
 from llm import stream_chat
 from main import TOOLS, build_system, run_tool
@@ -119,6 +121,28 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     messages.append({"role": "user", "content": user_text})
 
     memory.log_turn("user", user_text, mode, session_id)
+
+    # Deterministic privacy guard: an empty profile must never get a guessed
+    # identity from the model's latent knowledge or the activity scan.
+    personal = re.search(
+        r"who am i|my name|what do i study|what do i know about me|my sport|my project",
+        user_text.lower(),
+    )
+    user = profiles.active()
+    if personal and not profiles.list_all(user) and not memory.note_paths():
+        answer = ("I don't have any saved memories for this profile yet. "
+                  "Tell me about yourself and I'll remember it.")
+        yield ("delta", {"text": answer})
+        memory.log_turn("assistant", answer, mode, session_id)
+        yield ("done", {"session": session_id, "text": answer})
+        return
+
+    used = profiles.search(profiles.active(), user_text, k=4)
+    if used:
+        yield ("memory", {
+            "count": len(used),
+            "categories": sorted({row["category"] for row in used}),
+        })
     memory.update_session(session_id, mode=mode)
     if not history:  # first message becomes the title
         memory.update_session(session_id, title=user_text[:70])
@@ -189,8 +213,13 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
 def _journal(user_text: str) -> None:
     try:
         for fact in librarian.extract(user_text):
+            user = profiles.active()
             if not memory.find_note(fact):
                 memory.remember(fact, ["auto"])
+            profiles.add(
+                user, profiles.infer_category(fact), fact,
+                source="user statement", confidence=0.75,
+            )
     except Exception:
         pass
 
@@ -247,6 +276,20 @@ class Handler(BaseHTTPRequestHandler):
                     "frontier": FRONTIER_READY,
                     "modes": list(modes.MODES),
                 })
+            if path == "/api/profiles":
+                return self._json({
+                    "profiles": profiles.list_profiles(),
+                    "active": profiles.active(),
+                })
+            if path == "/api/memories":
+                category = (parse_qs(urlparse(self.path).query).get("category") or [None])[0]
+                return self._json({
+                    "profile": profiles.active(),
+                    "memories": profiles.list_all(profiles.active(), category),
+                    "categories": sorted(profiles.CATEGORIES),
+                })
+            if path == "/api/memories/export":
+                return self._json(profiles.export(profiles.active()))
             if path == "/api/models":
                 query = parse_qs(urlparse(self.path).query)
                 other = (query.get("base_url") or [None])[0]
@@ -292,6 +335,40 @@ class Handler(BaseHTTPRequestHandler):
                 if self.server.browser_lease:
                     self.server.browser_lease.close()
                 return self._json({"ok": True}, 202)
+
+            if path == "/api/profiles":
+                action = body.get("action") or "switch"
+                if action == "create":
+                    profile_id = profiles.create(body.get("name", ""))
+                    profiles.switch(profile_id)
+                    return self._json({"id": profile_id}, 201)
+                profiles.switch(body.get("id", ""))
+                return self._json({"ok": True, "active": profiles.active()})
+
+            if path == "/api/memories":
+                memory_id, status = profiles.add(
+                    profiles.active(),
+                    body.get("category", "temporary"),
+                    body.get("content", ""),
+                    confidence=float(body.get("confidence", 0.7)),
+                )
+                return self._json({"id": memory_id, "status": status}, 201)
+            if path == "/api/memories/import":
+                saved = 0
+                for item in body.get("items", []):
+                    try:
+                        profiles.add(
+                            profiles.active(), item.get("category", "temporary"),
+                            item.get("content", ""), source=item.get("source", "import"),
+                            confidence=float(item.get("confidence", 0.6)),
+                            created=item.get("created"),
+                        )
+                        saved += 1
+                    except ValueError:
+                        continue
+                return self._json({"ok": True, "saved": saved})
+            if path == "/api/memories/clear":
+                return self._json({"deleted": profiles.clear(profiles.active())})
 
             if path == "/api/settings":
                 saved = models.save(
@@ -367,12 +444,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PATCH(self):
         path = urlparse(self.path).path
+        body = self._body()
+        if path.startswith("/api/memories/"):
+            try:
+                memory_id = int(unquote(path.split("/")[3]))
+                updated = profiles.update(
+                    memory_id, profiles.active(), body.get("content"),
+                    category=body.get("category"),
+                )
+                return self._json({"memory": updated})
+            except (ValueError, TypeError) as exc:
+                return self._json({"error": str(exc)}, 400)
         if not path.startswith("/api/sessions/"):
             return self._json({"error": "not found"}, 404)
         sid = unquote(path.split("/")[3])
         if not memory.session_exists(sid):
             return self._json({"error": "no such session"}, 404)
-        body = self._body()
         try:
             memory.update_session(sid, title=body.get("title"), mode=body.get("mode"), model=body.get("model"))
             return self._json({"ok": True})
@@ -381,6 +468,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         path = urlparse(self.path).path
+        if path.startswith("/api/memories/"):
+            try:
+                memory_id = int(unquote(path.split("/")[3]))
+            except ValueError:
+                return self._json({"error": "bad memory id"}, 400)
+            return self._json({"ok": profiles.forget(memory_id, profiles.active())})
         if not path.startswith("/api/sessions/"):
             return self._json({"error": "not found"}, 404)
         sid = unquote(path.split("/")[3])

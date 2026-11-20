@@ -237,6 +237,36 @@ and `librarian.py` has guards. Full output: `docs/bench.json`.
 
 ---
 
+## Profiles and memory
+
+Atlas keeps memory per local profile, never in the model weights. Switching
+models never changes what you remember; switching profiles isolates it.
+
+```bash
+atlas user list
+atlas user create "Friend"          # returns an id
+atlas user switch u-xxxxxxxx
+atlas memory list                   # 0 for a fresh profile
+atlas memory search "tennis ranking"
+atlas memory add projects "Side project: grid renderer in C"
+atlas memory correct 19 "Updated fact"
+atlas memory forget 19
+atlas memory import                 # loads notes/*-seed-*.md into this profile
+atlas memory export                 # JSON, all your data
+atlas memory clear --yes
+```
+
+In the web UI the profile selector sits above the stats in the sidebar; the
+**mem** button opens the memory inspector, where you can add, filter and
+forget facts. When a reply uses stored context, the chat shows a small
+"used N saved memories" line. Secrets (keys, passwords, tokens, `.env`) are
+rejected before they can be stored, and an empty profile gets a deterministic
+"I don't have that saved" instead of a guessed identity.
+
+Full design and schema: `docs/memory.md`.
+
+---
+
 ## Bring your own model
 
 Atlas talks to anything that speaks the OpenAI chat-completions API: Ollama,

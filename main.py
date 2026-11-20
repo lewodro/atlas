@@ -22,6 +22,7 @@ from pathlib import Path
 import activity
 import librarian
 import memory
+import profiles
 import modes
 from config import FRONTIER_READY, MODEL, WHERE
 from llm import chat, tier_model
@@ -66,6 +67,29 @@ TOOLS = [
                     "tags": {"type": "array", "items": {"type": "string"}},
                 },
                 "required": ["note", "text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "forget_memory",
+            "description": "Forget one stored personal memory that matches a phrase. Active profile only.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_memories",
+            "description": "List the active profile's stored memories, optionally filtered by a phrase.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
             },
         },
     },
@@ -130,7 +154,25 @@ def run_tool(name: str, args: dict, user_text: str = "") -> str:
             return "Refused: that is not a fact the user stated."
         known = memory.find_note(text)
         path = memory.remember(text, args.get("tags"))
+        profiles.add(
+            profiles.active(), profiles.infer_category(text), text,
+            source="user statement", confidence=0.75,
+        )
         return f"Already known: {path.name}" if known else f"Saved as notes/{path.name}"
+    if name == "forget_memory":
+        query = (args.get("query") or "").strip()
+        hits = profiles.search(profiles.active(), query, k=3)
+        if not hits:
+            return "No stored memory matched."
+        victim = hits[0]
+        profiles.forget(victim["id"], profiles.active())
+        return f"Forgot memory {victim['id']}: {victim['content'][:80]}"
+    if name == "list_memories":
+        query = (args.get("query") or "").strip()
+        rows = profiles.list_all(profiles.active())
+        if query:
+            rows = [r for r in rows if query.lower() in r["content"].lower()]
+        return "\n".join(f"{r['id']}: {r['content'][:100]}" for r in rows[:8]) or "No memories."
     if name == "search_notes":
         return memory.recall(args.get("query", "")) or "No notes matched."
     if name == "update_memory":
@@ -186,7 +228,7 @@ def finish(answer: str, user_text: str, mode: str) -> str:
     answer = salvage(answer, user_text) or "(the model said nothing useful)"
     if answer.lower().startswith(ECHO):
         answer = "Noted."
-    memory.log_turn("assistant", answer, mode)
+    memory.log_turn("assistant", answer, mode, memory.cli_session())
     return answer
 
 
@@ -198,7 +240,7 @@ def turn(
     *,
     write_memory: bool = True,
 ) -> str:
-    memory.log_turn("user", user_text, mode)
+    memory.log_turn("user", user_text, mode, memory.cli_session())
     messages[0] = {"role": "system", "content": build_system(mode, user_text)}
     messages.append({"role": "user", "content": user_text})
 
@@ -319,7 +361,7 @@ def main() -> None:
         print("      · web later: atlas web")
         print(f"      · /modes  /mode <name>  /today  /notes  /stats{hint}  /quit\n")
 
-    messages = [{"role": "system", "content": ""}] + memory.load_recent(16)
+    messages = [{"role": "system", "content": ""}] + memory.load_recent(16, memory.cli_session())
 
     if once:
         answer = turn(messages, once, mode, tier, write_memory=False)
