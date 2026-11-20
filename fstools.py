@@ -76,10 +76,10 @@ def _safe_path(path: str) -> Path:
     raw = str(path or "").strip()
     if not raw:
         raise ToolError("path is empty")
+    if raw in ("/", "./"):
+        raw = "."
     candidate = Path(raw)
-    if candidate.is_absolute():
-        candidate = candidate.relative_to(candidate.anchor)
-    target = (root / candidate).resolve()
+    target = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
     if not target.is_relative_to(root):
         raise ToolError("path escapes the workspace")
     for part in target.relative_to(root).parts:

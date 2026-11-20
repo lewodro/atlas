@@ -28,20 +28,25 @@ import threading
 import time
 import webbrowser
 import traceback
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import activity
+import artifacts
 import fstools
 import librarian
 import memory
 import models
 import modes
 import profiles
+import registry
+import skills
+import workspace
 from config import FRONTIER_READY, MODEL, WHERE
 from llm import stream_chat
-from main import TOOLS, build_system, run_tool
+from main import build_system, tool_definitions
 
 WEB = Path(__file__).parent / "web"
 PORT = 7777
@@ -86,20 +91,36 @@ class AtlasHTTPServer(ThreadingHTTPServer):
 # ---------------------------------------------------------------- agent
 
 
+PENDING_PERMISSIONS: dict[str, tuple[threading.Event, bool | None]] = {}
+
+
+def _request_permission(tool: str, args: dict, call_id: str) -> str:
+    token = uuid.uuid4().hex
+    PENDING_PERMISSIONS[token] = (threading.Event(), None)
+    return token
+
+
+def decide_permission(token: str, allow: bool) -> bool:
+    item = PENDING_PERMISSIONS.get(token)
+    if not item:
+        return False
+    event, _ = item
+    PENDING_PERMISSIONS[token] = (event, bool(allow))
+    event.set()
+    return True
+
+
 def _tool_round(messages: list[dict], session_id: str, user_text: str, model: str | None = None):
-    """One streaming assistant turn. Yields events, returns (text, tool_calls)."""
+    """One streaming assistant turn. Yields deltas, returns (text, calls)."""
     content = ""
     calls: dict[int, dict] = {}
-
-    for chunk in stream_chat(messages, TOOLS, model=model):
+    for chunk in stream_chat(messages, tool_definitions(), model=model):
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta
-
         if delta.content:
             content += delta.content
             yield ("delta", {"text": delta.content})
-
         for tc in delta.tool_calls or []:
             slot = calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
             if tc.id:
@@ -109,22 +130,26 @@ def _tool_round(messages: list[dict], session_id: str, user_text: str, model: st
                     slot["name"] += tc.function.name
                 if tc.function.arguments:
                     slot["arguments"] += tc.function.arguments
-
-    return content, list(calls.values()), None
+    return content, list(calls.values())
 
 
 def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = None):
-    """SSE event generator: delta / tool / done / error."""
+    """SSE generator: delta / tool / skill / artifact / permission / done / error."""
     history = memory.load_recent(24, session_id)
 
-    messages: list[dict] = [{"role": "system", "content": build_system(mode, user_text)}]
+    skill_id = skills.select_skill(user_text)
+    messages: list[dict] = [
+        {"role": "system", "content": build_system(mode, user_text, skill_id)}
+    ]
     messages += history
     messages.append({"role": "user", "content": user_text})
-
     memory.log_turn("user", user_text, mode, session_id)
 
-    # Deterministic privacy guard: an empty profile must never get a guessed
-    # identity from the model's latent knowledge or the activity scan.
+    if skill_id:
+        skill = skills.load_skill(skill_id)
+        if skill:
+            yield ("skill", {"id": skill_id, "name": skill["name"]})
+
     personal = re.search(
         r"who am i|my name|what do i study|what do i know about me|my sport|my project",
         user_text.lower(),
@@ -145,18 +170,15 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
             "categories": sorted({row["category"] for row in used}),
         })
     memory.update_session(session_id, mode=mode)
-    if not history:  # first message becomes the title
+    if not history:
         memory.update_session(session_id, title=user_text[:70])
 
     answer_parts: list[str] = []
-
+    fetched_for_skill = False
+    git_prompts: set[str] = set()
     try:
-        for _ in range(2):
-            content, calls, err = yield from _tool_round(messages, session_id, user_text, model)
-            if err:
-                yield ("error", {"message": err})
-                return
-
+        for _ in range(4):  # bounded multi-tool loop
+            content, calls = yield from _tool_round(messages, session_id, user_text, model)
             if not calls:
                 answer_parts.append(content)
                 break
@@ -165,11 +187,8 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                 "role": "assistant",
                 "content": content,
                 "tool_calls": [
-                    {
-                        "id": c["id"] or f"call_{i}",
-                        "type": "function",
-                        "function": {"name": c["name"], "arguments": c["arguments"] or "{}"},
-                    }
+                    {"id": c["id"] or f"call_{i}", "type": "function",
+                     "function": {"name": c["name"], "arguments": c["arguments"] or "{}"}}
                     for i, c in enumerate(calls)
                 ],
             })
@@ -179,34 +198,75 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                     args = json.loads(call["arguments"] or "{}")
                 except json.JSONDecodeError:
                     args = {}
-                result = run_tool(call["name"], args, user_text)
-                yield ("tool", {"name": call["name"], "result": result})
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call["id"] or f"call_{i}",
-                    "content": result,
-                })
-        else:
-            # two tool rounds and still no prose: take the tools away
-            from llm import chat as plain
+                call_id = call["id"] or f"call_{i}"
+                level = registry.permission(call["name"], args)
+                approved = level != "ASK"
+                if not approved:
+                    token = _request_permission(call["name"], args, call_id)
+                    yield ("permission", {
+                        "token": token, "tool": call["name"], "call_id": call_id,
+                        "preview": json.dumps(args, ensure_ascii=False)[:220],
+                    })
+                    event, _ = PENDING_PERMISSIONS[token]
+                    event.wait(120)
+                    _, decision = PENDING_PERMISSIONS.pop(token, (event, None))
+                    approved = decision is True
 
+                if not approved:
+                    tool_text = "Permission denied by user."
+                    yield ("tool", {"name": call["name"], "result": tool_text,
+                                    "ok": False, "status": "denied"})
+                else:
+                    result = registry.run(call["name"], args, approved=True)
+                    if call["name"] == "web_fetch":
+                        fetched_for_skill = True
+                    if call["name"] == "git_status" and "diff" not in git_prompts:
+                        git_prompts.add("diff")
+                    tool_text = registry.content(result)
+                    yield ("tool", {
+                        "name": call["name"], "result": tool_text,
+                        "ok": result["ok"], "status": "ok" if result["ok"] else "error",
+                        "duration_ms": result["duration_ms"],
+                    })
+                    hint = result.get("artifact_hint")
+                    if result["ok"] and hint:
+                        item = artifacts.register(
+                            hint.get("title", call["name"]), hint.get("kind", "file"),
+                            path=hint.get("path"), chat_id=session_id,
+                        )
+                        yield ("artifact", item)
+
+                messages.append({
+                    "role": "tool", "tool_call_id": call_id, "content": tool_text,
+                })
+                if (skill_id == "web-research" and call["name"] == "web_search"
+                        and not fetched_for_skill and result["ok"]):
+                    messages.append({
+                        "role": "user",
+                        "content": "Follow the active skill: call web_fetch on the first result URL now, before answering.",
+                    })
+                if skill_id == "github-engineer" and result["ok"]:
+                    if call["name"] == "git_status" and "diff" not in git_prompts:
+                        git_prompts.add("diff")
+                        messages.append({"role": "user", "content":
+                            "Follow the active skill: call git_diff now before answering."})
+                    elif call["name"] not in ("git_status", "git_diff") and "status" not in git_prompts:
+                        git_prompts.add("status")
+                        messages.append({"role": "user", "content":
+                            "Follow the active skill: call git_status and git_diff now before answering."})
+        else:
+            from llm import chat as plain
             msg = plain(messages, None, model=model)
-            text = msg.content or ""
-            answer_parts.append(text)
-            if text:
-                yield ("delta", {"text": text})
+            if msg.content:
+                answer_parts.append(msg.content)
+                yield ("delta", {"text": msg.content})
 
         answer = "".join(answer_parts).strip() or "(no answer)"
         memory.log_turn("assistant", answer, mode, session_id)
         memory.update_session(session_id)
         yield ("done", {"session": session_id, "text": answer})
-
-        # note-taking must not delay the UI or break the stream
-        threading.Thread(
-            target=_journal, args=(user_text,), daemon=True
-        ).start()
-
-    except Exception as exc:  # surface it, don't kill the server
+        threading.Thread(target=_journal, args=(user_text,), daemon=True).start()
+    except Exception as exc:
         traceback.print_exc()
         yield ("error", {"message": f"{type(exc).__name__}: {exc}"})
 
@@ -303,15 +363,45 @@ class Handler(BaseHTTPRequestHandler):
                     })
                 return self._json(models.describe())
             if path == "/api/tools":
+                return self._json({"tools": registry.metadata()})
+            if path == "/api/tools/activity":
+                return self._json({"activity": registry.activity(300)})
+            if path == "/api/permissions":
                 return self._json({
-                    "tools": [
-                        {"name": "web_search", "available": True,
-                         "note": "DuckDuckGo (no key) or Brave if configured"},
-                        {"name": "web_fetch", "available": True,
-                         "note": "public http(s), SSRF-checked"},
-                        {"name": "filesystem", **fstools.status()},
-                    ]
+                    "tools": {t["id"]: t["permission"] for t in registry.metadata()}
                 })
+            if path == "/api/skills":
+                return self._json({"skills": skills.list_skills()})
+            if path.startswith("/api/skills/"):
+                item = skills.load_skill(unquote(path.split("/")[3]))
+                return self._json({"skill": item} if item else {"error": "no such skill"},
+                                  200 if item else 404)
+            if path == "/api/workspace":
+                return self._json(workspace.context())
+            if path == "/api/artifacts":
+                return self._json({"artifacts": artifacts.list_all()})
+            if path.startswith("/api/artifacts/"):
+                parts = path.split("/")
+                artifact_id = unquote(parts[3])
+                if len(parts) > 4 and parts[4] == "content":
+                    file = artifacts.content_path(artifact_id)
+                    if not file:
+                        return self._json({"error": "no file content"}, 404)
+                    data = file.read_bytes()
+                    ctype = {
+                        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                        ".gif": "image/gif", ".svg": "image/svg+xml",
+                        ".json": "application/json", ".md": "text/markdown",
+                    }.get(file.suffix.lower(), "text/plain")
+                    self.send_response(200)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return None
+                item = artifacts.get(artifact_id)
+                return self._json({"artifact": item} if item else {"error": "no such artifact"},
+                                  200 if item else 404)
             if path == "/api/runtimes":
                 return self._json({
                     "runtimes": models.scan_runtimes(),
@@ -381,6 +471,15 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/memories/clear":
                 return self._json({"deleted": profiles.clear(profiles.active())})
 
+            if path == "/api/tools/permission":
+                ok = decide_permission(body.get("token", ""), body.get("allow") is True)
+                return self._json({"ok": ok})
+            if path == "/api/permissions":
+                try:
+                    level = registry.set_permission(body.get("id", ""), body.get("permission", ""))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 400)
+                return self._json({"ok": True, "permission": level})
             if path == "/api/tools/config":
                 try:
                     workspace = fstools.configure_workspace(body.get("workspace", ""))
@@ -486,6 +585,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         path = urlparse(self.path).path
+        if path.startswith("/api/artifacts/"):
+            return self._json({"ok": artifacts.delete(unquote(path.split("/")[3]))})
         if path.startswith("/api/memories/"):
             try:
                 memory_id = int(unquote(path.split("/")[3]))

@@ -15,9 +15,13 @@ import argparse
 import json
 import sys
 
+import artifacts
 import fstools
 import netguard
+import registry
+import skills
 import webtools
+import workspace
 
 WEB_TOOLS = [
     {"name": "web_search", "status": "available", "note": "DuckDuckGo HTML (no key) or Brave if ATLAS_BRAVE_KEY is set"},
@@ -35,6 +39,28 @@ def main() -> int:
     tools_sub.add_parser("status")
     configure = tools_sub.add_parser("configure")
     configure.add_argument("--workspace", help="directory the filesystem tool may access")
+    run = tools_sub.add_parser("run")
+    run.add_argument("id")
+    run.add_argument("--args", default="{}", help="JSON object of tool arguments")
+    tools_sub.add_parser("permissions")
+
+    skill = sub.add_parser("skills", help="installed instruction skills")
+    skill_sub = skill.add_subparsers(dest="action", required=True)
+    skill_sub.add_parser("list")
+    show = skill_sub.add_parser("show")
+    show.add_argument("id")
+    enable = skill_sub.add_parser("enable")
+    enable.add_argument("id")
+    disable = skill_sub.add_parser("disable")
+    disable.add_argument("id")
+
+    art = sub.add_parser("artifacts", help="files Atlas created or used")
+    art_sub = art.add_subparsers(dest="action", required=True)
+    art_sub.add_parser("list")
+    art_show = art_sub.add_parser("show")
+    art_show.add_argument("id")
+
+    sub.add_parser("workspace", help="show workspace and Git context")
 
     net = sub.add_parser("net", help="web search and fetch")
     net_sub = net.add_subparsers(dest="action", required=True)
@@ -57,23 +83,55 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.group == "workspace":
+            print(json.dumps(workspace.context(), indent=2))
+            return 0
+
+        if args.group == "skills":
+            if args.action == "list":
+                for item in skills.list_skills():
+                    mark = "+" if item["enabled"] else "-"
+                    print(f"{mark} {item['id']:18} {item['description']}")
+            elif args.action == "show":
+                item = skills.load_skill(args.id)
+                if not item:
+                    print("error: no such skill", file=sys.stderr)
+                    return 1
+                print(item["body"])
+            else:
+                skills.set_enabled(args.id, args.action == "enable")
+                print(f"{args.id}: {'enabled' if args.action == 'enable' else 'disabled'}")
+            return 0
+
+        if args.group == "artifacts":
+            if args.action == "list":
+                for item in artifacts.list_all():
+                    print(f"{item['id']} [{item['kind']:8}] {item['title']}")
+            else:
+                item = artifacts.get(args.id)
+                print(json.dumps(item, indent=2) if item else "no such artifact")
+            return 0
+
         if args.group == "tools":
+            if args.action == "permissions":
+                for row in registry.metadata():
+                    print(f"{row['id']:16} {row['permission']:6} {row['category']}")
+                return 0
+            if args.action == "run":
+                result = registry.run(args.id, json.loads(args.args))
+                print(json.dumps(result, indent=2))
+                return 0 if result["ok"] else 1
             if args.action == "configure":
                 if not args.workspace:
                     parser.error("--workspace is required")
                 print("workspace:", fstools.configure_workspace(args.workspace))
                 return 0
-            rows = [
-                {"name": "web_search", "status": "available", "note": "public web, no key required"},
-                {"name": "web_fetch", "status": "available", "note": "SSRF-checked http(s)"},
-                {"name": "filesystem", "status": "available" if fstools.status()["available"] else "not configured",
-                 "note": fstools.status().get("workspace") or "run: atlas tools configure --workspace PATH"},
-            ]
-            for row in rows:
+            for row in registry.metadata():
                 if args.action == "status":
                     print(json.dumps(row))
                 else:
-                    print(f"{row['name']:14} {row['status']:14} {row.get('note') or row.get('workspace') or ''}")
+                    state = "available" if row["available"] else "not configured"
+                    print(f"{row['id']:16} {state:14} {row['permission']:6} {row['provider']:8} {row['description'][:60]}")
             return 0
 
         if args.group == "net":
