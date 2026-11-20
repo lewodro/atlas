@@ -21,6 +21,7 @@ from pathlib import Path
 from config import ROOT_DATA
 
 DB = ROOT_DATA / "atlas.db"
+DB.parent.mkdir(parents=True, exist_ok=True)
 ACTIVE_FILE = ROOT_DATA / "profile.json"
 DEFAULT = "default"
 
