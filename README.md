@@ -28,10 +28,13 @@ anywhere.
 
 | | | |
 |---|---|---|
-| ![Atlas chat](docs/screenshots/chat.png) | ![Tools](docs/screenshots/tools.png) | ![Memory](docs/screenshots/memory.png) |
-| Chat &amp; welcome | Tool workspace | Memory |
+| ![Atlas chat](docs/screenshots/chat.png) | ![Usage](docs/screenshots/usage.png) | ![Memory](docs/screenshots/memory.png) |
+| Near-black chat &amp; welcome | Real usage data | Plain-language memory |
 
-![Artifacts](docs/screenshots/artifacts.png)
+| | |
+|---|---|
+| ![Tools](docs/screenshots/tools.png) | ![Settings](docs/screenshots/settings.png) |
+| Tool workspace | Themes, accents, models, tools, memory |
 
 ---
 
@@ -142,8 +145,16 @@ local model status and running tools. No native dropdowns, no dashboard clutter.
 everything else as *not configured* — web search, filesystem, terminal, Git,
 image generation and MCP servers have UI surfaces ready, but are not
 implemented yet. **Artifacts** is an empty list with preview components ready
-for real files. **Memory** presents durable facts as plain statements grouped
-into About you / Preferences / Projects / Goals / Environment.
+for real files. **Usage** shows only real counts from the local API, with
+terminal-style text charts and an optional floating panel. **Memory** presents
+durable facts as plain statements grouped into About you / Preferences /
+Projects / Goals / Environment.
+
+The default theme is near-black with a small cyan accent. Settings offers
+Atlas (cyan), Midnight (deep blue), Mono (white/gray) and Forest (muted green),
+plus a custom accent. Themes change backgrounds, surfaces, borders and text,
+not just the accent color. Everything is stored in the browser's local
+storage — no account, no sync.
 
 ---
 
