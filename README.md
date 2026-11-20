@@ -8,7 +8,9 @@
 [![Web search](https://img.shields.io/badge/web%20search-DuckDuckGo-22d3a6)]()
 [![Web fetch](https://img.shields.io/badge/web%20fetch-SSRF%20guarded-22d3a6)]()
 [![Filesystem](https://img.shields.io/badge/filesystem-workspace%20confined-22d3a6)]()
-[![Tools](https://img.shields.io/badge/tools-3%20live-2ea44f)]()
+[![Tools](https://img.shields.io/badge/tools-6%20live-2ea44f)]()
+[![Skills](https://img.shields.io/badge/skills-4%20lazy--loaded-22d3a6)]()
+[![Permissions](https://img.shields.io/badge/permissions-ALLOW%20%2F%20ASK%20%2F%20DENY-6f42c1)]()
 
 ```
 you> I'm a first-year CS student, 8 GB M1, learning Python and C.
@@ -37,8 +39,13 @@ anywhere.
 
 | | |
 |---|---|
-| ![Tools](docs/screenshots/tools.png) | ![Settings](docs/screenshots/settings.png) |
-| Tool workspace | Themes, accents, models, tools, memory |
+| ![Tools](docs/screenshots/tools.png) | ![Skills](docs/screenshots/skills.png) |
+| Tool workspace | Lazy-loaded skills |
+
+| | |
+|---|---|
+| ![Artifacts](docs/screenshots/artifacts.png) | ![Settings](docs/screenshots/settings.png) |
+| Real artifacts with previews | Themes, models, tools, memory |
 
 ---
 
@@ -216,6 +223,24 @@ atlas net fetch https://example.com
 printf 'hello' | atlas fs write notes/hello.txt
 atlas fs read notes/hello.txt
 uv run python -m unittest discover -s tests -v   # 33 offline tests
+```
+
+---
+
+## Agent runtime
+
+Atlas now runs a bounded agent loop: select a skill, call tools, inspect
+results, call more tools, answer. Skills are instruction files in
+`skills/<id>/SKILL.md`, loaded only when needed. Tools are declared in one
+registry that drives the model, CLI, API and GUI. Writes require an explicit
+Allow; DENY tools are never advertised. See **[docs/agent.md](docs/agent.md)**.
+
+```bash
+atlas tools                              # registry-driven tool list + permissions
+atlas tools permissions
+atlas skills list | show web-research
+atlas artifacts list
+atlas workspace                          # root, repo, branch, clean/dirty
 ```
 
 ---
