@@ -164,6 +164,13 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
         system += "\n\n" + goal_block
     messages: list[dict] = [{"role": "system", "content": system}]
     messages += history
+
+    # Small models try terminal `mkdir` even though only files supports it.
+    low = clean.lower()
+    if any(word in low for word in ("mkdir", "create a folder", "make a folder", "new folder")):
+        clean += "\n(Use the files tool with action mkdir — the terminal cannot create folders.)"
+    if any(word in low for word in ("write a file", "write notes", "save a file")):
+        clean += "\n(Use the files tool with action write and a full file path.)"
     messages.append({"role": "user", "content": clean})
     memory.log_turn("user", user_text, mode, session_id)
 
@@ -548,6 +555,25 @@ class Handler(BaseHTTPRequestHandler):
                     model=body.get("model", ""),
                 )
                 return self._json({"ok": True, **models.describe(), "saved": saved})
+
+            if path == "/api/sessions/delete":
+                ids = body.get("ids") or []
+                if not isinstance(ids, list):
+                    return self._json({"error": "ids must be a list"}, 400)
+                deleted, failed = [], []
+                for sid in ids[:500]:
+                    sid = str(sid)
+                    if sid in (memory.CLI_SESSION, memory.cli_session()):
+                        failed.append(sid)
+                        continue
+                    try:
+                        memory.delete_session(sid)
+                        deleted.append(sid)
+                    except (ValueError, Exception):
+                        failed.append(sid)
+                if deleted and body.get("current") in deleted:
+                    pass
+                return self._json({"deleted": deleted, "failed": failed})
 
             if path == "/api/sessions":
                 mode = modes.canonical(body.get("mode") or "")
