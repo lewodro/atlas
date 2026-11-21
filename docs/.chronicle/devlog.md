@@ -11,3 +11,4 @@
 - memory.py exposes both stats and semantic recall through the atlas CLI.
 - activity.py --scan appends a timestamped activity snapshot.
 - consolidate.py folds recent activity into long-term notes during sleep.
+- tools_cli.py is the dispatch surface for tools, skills, and artifacts.
