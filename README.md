@@ -153,9 +153,20 @@ Atlas finds your running Ollama, LM Studio, llama.cpp or vLLM server by itself
 — click ⚙ to switch runtimes and models without editing files.
 
 The interface is a quiet workspace: a compact sidebar with chats, Tools,
-Artifacts and Memory; a single rounded composer; custom keyboard-accessible
-controls for mode, model and profile. Cyan is reserved for active state,
-local model status and running tools. No native dropdowns, no dashboard clutter.
+Skills, Artifacts, Usage and Memory; a single rounded composer; custom
+keyboard-accessible controls for model, theme and profile. Cyan is reserved
+for active state, local model status and running tools. No native dropdowns,
+no dashboard clutter.
+
+Every non-chat view has a **← Chat** arrow and a `/view` path bar with a live
+status count (available tools, installed skills, artifacts, memories), so you
+can return to the conversation without reloading the page.
+
+Themes: Atlas (near-black + cyan), Midnight (pitch-black + deep blue),
+Mono (black + gray), Forest (black + muted green), Graphite (pure black +
+white) and Funky (near-black + soft violet). Preview one with
+`http://localhost:7777/?theme=graphite`. The custom accent row adds Cyan,
+Blue, Green, White or Violet on top of any theme.
 
 **Tools** shows what is genuinely available on this machine and clearly marks
 everything else as *not configured* — web search, filesystem, terminal, Git,
