@@ -893,6 +893,24 @@ dialog#configure { width: min(760px, 94vw); }
 .slash-item .s-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); font-size: 11px; }
 @media (max-width: 760px) { .slash-item { grid-template-columns: 18px 110px 1fr; } }
 
+/* Stagger the palette rows in so the slash list reads as a list, not a pop-in. */
+.slash-menu.slash-animate .slash-item { animation: slash-row .18s ease-out both; }
+.slash-menu.slash-animate .slash-item:nth-child(1) { animation-delay: 0s; }
+.slash-menu.slash-animate .slash-item:nth-child(2) { animation-delay: .02s; }
+.slash-menu.slash-animate .slash-item:nth-child(3) { animation-delay: .04s; }
+.slash-menu.slash-animate .slash-item:nth-child(4) { animation-delay: .06s; }
+.slash-menu.slash-animate .slash-item:nth-child(5) { animation-delay: .08s; }
+.slash-menu.slash-animate .slash-item:nth-child(6) { animation-delay: .10s; }
+.slash-menu.slash-animate .slash-item:nth-child(7) { animation-delay: .12s; }
+.slash-menu.slash-animate .slash-item:nth-child(8) { animation-delay: .14s; }
+@keyframes slash-row {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slash-menu.slash-animate .slash-item { animation: none; }
+}
+
 .goal-line {
   align-self: flex-start; max-width: 100%; margin: -12px 0 2px;
   padding: 8px 12px; border: 1px solid var(--accent-line); border-radius: 9px;
