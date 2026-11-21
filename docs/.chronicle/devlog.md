@@ -18,3 +18,4 @@
 - termtools.py wraps shell execution for agent-driven commands.
 - mathtools.py adds calculation helpers used in study sessions.
 - orchestrator.py coordinates multi-step agent work across tools.
+- context.py assembles the context window sent to the model.
