@@ -53,6 +53,35 @@ Nothing outside the configured workspace is reachable. Refused:
 Only `read`, `write` and `list` exist. There is no delete, move, glob or shell
 primitive. Writes are atomic and inherit the existing file mode.
 
+## File manager
+
+```bash
+atlas fm list
+atlas fm read src/main.py
+atlas fm write notes/hello.md --text "hello"
+atlas fm mkdir drafts
+atlas fm move drafts/hello.md notes/hello.md
+atlas fm delete drafts
+```
+
+Actions `write`, `mkdir`, `move` and `delete` require an `ASK` approval. Paths
+are confined to the workspace; hidden files, keys, symlinks and the workspace
+root itself are refused. Writes register a real artifact.
+
+## Terminal (allowlisted, not a shell)
+
+```bash
+atlas term ls
+atlas term git status
+atlas term git log --oneline
+atlas term tree
+```
+
+Only these run: `ls`, `pwd`, `cat`, `tree`, `git status`, `git log`,
+`git diff`, `git branch`. There are **no pipes, redirects, chaining, globs,
+env vars or arbitrary executables**. Every command runs with `shell=False`,
+a timeout and capped output, with `cwd` fixed to the configured workspace.
+
 ## Status and configuration
 
 ```bash

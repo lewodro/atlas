@@ -60,6 +60,21 @@ def main() -> int:
     art_show = art_sub.add_parser("show")
     art_show.add_argument("id")
 
+    fm = sub.add_parser("fm", help="workspace file manager")
+    fm_sub = fm.add_subparsers(dest="action", required=True)
+    for action in ("list", "read", "mkdir", "delete"):
+        item = fm_sub.add_parser(action)
+        item.add_argument("path", nargs="?", default=".")
+    write = fm_sub.add_parser("write")
+    write.add_argument("path")
+    write.add_argument("--text", help="content; omit to read stdin")
+    move = fm_sub.add_parser("move")
+    move.add_argument("source")
+    move.add_argument("destination")
+
+    term = sub.add_parser("term", help="allowlisted read-only terminal command")
+    term.add_argument("command", nargs=argparse.REMAINDER)
+
     sub.add_parser("workspace", help="show workspace and Git context")
 
     net = sub.add_parser("net", help="web search and fetch")
@@ -83,6 +98,22 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.group == "fm":
+            payload = {"action": args.action, "path": getattr(args, "path", ".")}
+            if args.action == "write":
+                payload["content"] = args.text if args.text is not None else sys.stdin.read()
+            if args.action == "move":
+                payload = {"action": "move", "path": args.source,
+                           "destination": args.destination}
+            result = registry.run("file_manager", payload, approved=True)
+            print(registry.content(result))
+            return 0 if result["ok"] else 1
+
+        if args.group == "term":
+            result = registry.run("terminal", {"command": " ".join(args.command)})
+            print(registry.content(result))
+            return 0 if result["ok"] else 1
+
         if args.group == "workspace":
             print(json.dumps(workspace.context(), indent=2))
             return 0
