@@ -28,6 +28,7 @@ import netguard
 import memory
 import profiles
 import modes
+import orchestrator
 import registry
 import skills
 import webtools
@@ -63,16 +64,26 @@ def build_system(mode: str, user_text: str, skill_id: str | None = None) -> str:
     notes = memory.recall(user_text)
     if memory.digest():
         notes = memory.digest() + ("\n\n" + notes if notes else "")
-    skill_id = skill_id or FORCE_SKILL or skills.select_skill(user_text)
+    plan = orchestrator.plan(user_text)
+    skill_ids = list(plan["skills"])
+    chosen = skill_id or FORCE_SKILL
+    if chosen and chosen not in skill_ids:
+        skill_ids.insert(0, chosen)
+    if not skill_ids:
+        fallback = skills.select_skill(user_text)
+        if fallback:
+            skill_ids.append(fallback)
     # Project skills must reason from tool results, not from a global scan of ~/dev.
-    activity = "" if skill_id in ("project-explorer", "github-engineer") else activity_block()
+    activity = "" if any(s in skill_ids for s in ("project-explorer", "github-engineer")) else activity_block()
     prompt = modes.build(mode, notes, activity)
+    prompt += f"\n\nAGENT ROLE: {plan['role']}"
     local_card = context.card(user_text, skill_id)
     if local_card:
         prompt += "\n\n" + local_card
-    skill = skills.load_skill(skill_id) if skill_id else None
-    if skill and skill.get("enabled"):
-        prompt += "\n\nSKILL: " + skill["name"] + "\n" + skill["body"][:1400]
+    for sid in skill_ids[:2]:
+        skill = skills.load_skill(sid)
+        if skill and skill.get("enabled"):
+            prompt += "\n\nSKILL: " + skill["name"] + "\n" + skill["body"][:1100]
     return prompt
 
 

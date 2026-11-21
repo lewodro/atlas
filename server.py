@@ -40,6 +40,7 @@ import librarian
 import memory
 import models
 import modes
+import orchestrator
 import profiles
 import registry
 import skills
@@ -138,6 +139,7 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     history = memory.load_recent(24, session_id)
 
     skill_id = skills.select_skill(user_text)
+    role = orchestrator.select_role(user_text)
     messages: list[dict] = [
         {"role": "system", "content": build_system(mode, user_text, skill_id)}
     ]
@@ -148,7 +150,7 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     if skill_id:
         skill = skills.load_skill(skill_id)
         if skill:
-            yield ("skill", {"id": skill_id, "name": skill["name"]})
+            yield ("skill", {"id": skill_id, "name": skill["name"], "role": role})
 
     personal = re.search(
         r"who am i|my name|what do i study|what do i know about me|my sport|my project",
