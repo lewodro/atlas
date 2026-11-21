@@ -42,6 +42,8 @@ class Terminal(unittest.TestCase):
         self.assertIn("extra.txt", termtools.run("git status"))
         self.assertIn("first", termtools.run("git log"))
         self.assertIn("repo", termtools.run("pwd"))
+        self.assertIn("first", termtools.run("git_log"))
+        self.assertIn("extra.txt", termtools.run("git_status"))
         self.assertIn("README.md", termtools.run("tree"))
 
     def test_dangerous_commands_are_refused(self):
@@ -82,6 +84,28 @@ class FileManager(unittest.TestCase):
         (self.root / ".hidden").write_text("secret")
         with self.assertRaises(fstools.ToolError):
             fstools.delete(".hidden")
+
+
+class GitInit(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name) / "fresh"
+        root.mkdir()
+        self.patch = patch.object(fstools, "CONFIG_FILE", Path(self.tmp.name) / "tools.json")
+        self.patch.start()
+        fstools.configure_workspace(str(root))
+        self.root = root
+
+    def tearDown(self):
+        self.patch.stop()
+        self.tmp.cleanup()
+
+    def test_init_creates_repo_once(self):
+        import gittools
+        self.assertFalse(gittools.is_repo())
+        self.assertIn("Initialized", gittools.init_repo())
+        self.assertTrue(gittools.is_repo())
+        self.assertIn("already", gittools.init_repo())
 
 
 class RegistryTools(unittest.TestCase):

@@ -243,6 +243,10 @@ def _filesystem(args: dict) -> Any:
     raise ValueError("action must be read, write or list")
 
 
+def _git_init(args: dict) -> str:
+    return gittools.init_repo()
+
+
 def _git_status(args: dict) -> str:
     return gittools.status_text()
 
@@ -364,6 +368,14 @@ def register_builtins() -> None:
         description="Load the full instructions of one skill by id, only when needed.",
         parameters={"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
         handler=_skills_load, category="skills", provider="atlas",
+    ))
+    register(ToolSpec(
+        id="git_init",
+        description="Initialize a Git repository in the workspace root. Safe, no flags. Only when not already a repo.",
+        parameters={"type": "object", "properties": {}},
+        handler=_git_init, category="git", provider="atlas",
+        permission="ASK",
+        available=lambda: not gittools.is_repo() and fstools.status()["available"],
     ))
     register(ToolSpec(
         id="git_status",

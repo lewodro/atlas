@@ -35,6 +35,11 @@ def run(command: str) -> str:
         raise fstools.ToolError("empty command")
 
     root = str(fstools.workspace())
+    # Small models often emit "git_status" instead of "git status".
+    parts = [word.replace("_", " ") for word in parts]
+    parts = [piece for word in parts for piece in word.split(" ") if piece]
+    if not parts:
+        raise fstools.ToolError("empty command")
     name = parts[0].lower()
     rest = parts[1:]
 
