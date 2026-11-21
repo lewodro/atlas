@@ -12,3 +12,4 @@
 - activity.py --scan appends a timestamped activity snapshot.
 - consolidate.py folds recent activity into long-term notes during sleep.
 - tools_cli.py is the dispatch surface for tools, skills, and artifacts.
+- registry.py tracks which tools and skills are currently registered.
