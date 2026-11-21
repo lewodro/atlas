@@ -28,3 +28,4 @@
 - docs/agent.md documents roles, instances, and study behavior.
 - docs/memory.md explains the memory hierarchy and recall path.
 - docs/tools.md enumerates the built-in tool set.
+- docs/architecture.md gives the high-level module map.
