@@ -33,7 +33,7 @@ class Registry(unittest.TestCase):
     def test_builtin_ids(self):
         ids = {row["id"] for row in registry.metadata()}
         self.assertTrue({
-            "web_search", "web_fetch", "filesystem",
+            "web_search", "web_fetch", "files",
             "git_status", "git_diff", "git_log",
         } <= ids)
 
@@ -68,7 +68,7 @@ class Registry(unittest.TestCase):
             root = Path(folder)
             with patch.object(registry, "PERMISSIONS_FILE", root / "permissions.json"), \
                  patch.object(registry, "ACTIVITY_FILE", root / "activity.jsonl"):
-                result = registry.run("filesystem", {"action": "write", "path": "x", "content": "y"})
+                result = registry.run("files", {"action": "write", "path": "x", "content": "y"})
                 self.assertEqual(result["error"], registry.NEEDS_APPROVAL)
                 self.assertFalse(result["ok"])
                 registry.set_permission("web_fetch", "DENY")

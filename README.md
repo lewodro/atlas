@@ -13,6 +13,9 @@
 [![Permissions](https://img.shields.io/badge/permissions-ALLOW%20%2F%20ASK%20%2F%20DENY-6f42c1)]()
 [![Local data](https://img.shields.io/badge/local%20data-never%20committed-2ea44f)]()
 [![Terminal](https://img.shields.io/badge/terminal-allowlisted-22d3a6)]()
+[![Agent](https://img.shields.io/badge/agent-unified-22d3a6)]()
+[![Orchestrator](https://img.shields.io/badge/orchestrator-roles%20%26%20instances-6f42c1)]()
+[![Study](https://img.shields.io/badge/study-notes%20%26%20math-22d3a6)]()
 
 ```
 you> I'm a first-year CS student, 8 GB M1, learning Python and C.
@@ -150,9 +153,20 @@ Atlas finds your running Ollama, LM Studio, llama.cpp or vLLM server by itself
 — click ⚙ to switch runtimes and models without editing files.
 
 The interface is a quiet workspace: a compact sidebar with chats, Tools,
-Artifacts and Memory; a single rounded composer; custom keyboard-accessible
-controls for mode, model and profile. Cyan is reserved for active state,
-local model status and running tools. No native dropdowns, no dashboard clutter.
+Skills, Artifacts, Usage and Memory; a single rounded composer; custom
+keyboard-accessible controls for model, theme and profile. Cyan is reserved
+for active state, local model status and running tools. No native dropdowns,
+no dashboard clutter.
+
+Every non-chat view has a **← Chat** arrow and a `/view` path bar with a live
+status count (available tools, installed skills, artifacts, memories), so you
+can return to the conversation without reloading the page.
+
+Themes: Atlas (near-black + cyan), Midnight (pitch-black + deep blue),
+Mono (black + gray), Forest (black + muted green), Graphite (pure black +
+white) and Funky (near-black + soft violet). Preview one with
+`http://localhost:7777/?theme=graphite`. The custom accent row adds Cyan,
+Blue, Green, White or Violet on top of any theme.
 
 **Tools** shows what is genuinely available on this machine and clearly marks
 everything else as *not configured* — web search, filesystem, terminal, Git,
@@ -213,8 +227,7 @@ Three tools are live in chat and on the CLI. See **[docs/tools.md](docs/tools.md
 |---|---|---|
 | Web search | DuckDuckGo results, no key (Brave optional) | `atlas net search "query"` |
 | Web fetch | Readable text from a public page, with source URL | `atlas net fetch https://…` |
-| Filesystem | Read / write / list inside one chosen workspace | `atlas fs read path` |
-| File manager | mkdir / move / delete with approval | `atlas fm list` |
+| Files | Read / write / list / mkdir / move / delete in the workspace | `atlas fs read path` |
 | Terminal | Allowlisted `ls`, `git status`, `git log`, … | `atlas term ls` |
 | Git | Local status / diff / log | `atlas tools run git_status` |
 
@@ -290,6 +303,48 @@ For an explicit write, without model extraction:
 ```bash
 atlas remember "I am learning Rust."
 ```
+
+---
+
+## Slash palette and goals
+
+Type `/` in the composer to see skills and commands. Pick a skill to load its
+instructions for that turn, or use `/goal <objective>` to give the agent a goal
+to work toward with real tools and bounded steps.
+
+```bash
+atlas goal set "inspect the repo and summarize the last commit"
+atlas goal status
+atlas goal clear
+```
+
+---
+
+## One agent, not modes
+
+Atlas has **one** mode: agent. Study, research, code and memory are skills the
+agent loads when needed, not separate personas. There is no mode switcher.
+
+```bash
+atlas                              # unified agent
+atlas study "explain derivatives"  # one-shot study session
+atlas agents roles                 # orchestrator roles
+atlas agents plan "study this function"
+atlas agents create WS ~/devAI/AtlasWSPC
+atlas agents run WS --port 7778    # isolated instance
+atlas agents list
+```
+
+Study writes comprehensive notes to the workspace, makes large summaries, and
+draws real function plots with `plot_function` (`x**2`, `sin(x)`, …) — all
+parsed safely, no code execution. See **[docs/agent.md](docs/agent.md)**.
+
+### Multiple instances
+
+Each instance gets its own workspace, SQLite data and notes folder, so you can
+run several Atlas processes for different projects without sharing memory.
+Set `ATLAS_DATA_DIR` / `ATLAS_WORKSPACE` for manual isolation; `atlas agents run`
+does both automatically.
 
 ---
 

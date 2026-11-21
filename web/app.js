@@ -13,7 +13,7 @@ const rememberLocal = (key, value) => {
 const state = {
   sessions: [],
   current: null,
-  mode: "coach",
+  mode: "agent",
   modes: [],
   models: [],
   runtimes: [],
@@ -84,10 +84,6 @@ function friendlyModel(id) {
   let name = id.split("/").pop().replace(/[-_:]/g, " ");
   name = name.replace(/(\d+(?:\.\d+)?)b\b/gi, "$1B");
   return name.replace(/\s+/g, " ").trim().replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function friendlyMode(mode) {
-  return { coach: "Coach", tutor: "Tutor", review: "Review", debug: "Debug", plan: "Plan" }[mode] || mode;
 }
 
 async function api(path, opts = {}) {
@@ -201,6 +197,8 @@ function setView(name) {
     $("#workspace-title").textContent = titles[name][0];
     $("#workspace-subtitle").textContent = titles[name][1];
   }
+  $("#view-path-name").textContent = name;
+  $("#view-status").textContent = viewStatus(name);
   $("#memory-controls").hidden = name !== "memory";
   $("#workspace-actions").innerHTML = name === "memory"
     ? `<button class="text-btn" id="mem-export">${icon("download")} Export</button>` : "";
@@ -213,6 +211,23 @@ function setView(name) {
   if (name === "usage") renderUsage();
   $("#sidebar").classList.remove("open");
 }
+
+function viewStatus(name) {
+  if (name === "tools") {
+    const n = state.tools.filter((t) => t.available).length;
+    return `${n}/${state.tools.length} available`;
+  }
+  if (name === "skills") {
+    const n = state.skills.filter((s) => s.enabled).length;
+    return `${n} installed`;
+  }
+  if (name === "artifacts") return `${state.artifacts.length} files`;
+  if (name === "usage") return "local only";
+  if (name === "memory") return `${state.memories.length} facts`;
+  return "";
+}
+
+$("#view-back").onclick = () => setView("chat");
 
 document.querySelectorAll(".primary-nav .nav-item").forEach((item) => {
   item.onclick = () => setView(item.dataset.view);
@@ -325,7 +340,7 @@ const TOOL_LABELS_EXTRA = {
   git_diff: "Read the diff",
   git_log: "Read commit history",
   terminal: "Ran a terminal command",
-  file_manager: "Managed workspace files",
+  files: "Managed workspace files",
 };
 function memoryLine(payload) {
   const el = document.createElement("details");
@@ -355,8 +370,6 @@ async function refreshStats() {
   const data = await api("/api/stats");
   state.stats = data;
   state.modes = data.modes || [];
-  selects.mode?.setOptions(state.modes.map((m) => ({ value: m, label: friendlyMode(m) })));
-  selects.mode?.setValue(state.mode);
   $("#activity-label").textContent = data.frontier ? "Frontier" : "Local";
   $("#runtime-label").textContent = data.where ? data.where.split(" @ ")[0] : "Local runtime";
   renderUsagePanel();
@@ -423,7 +436,6 @@ async function openSession(id) {
   state.mode = session.mode;
   state.modelChoice = session.model || "";
   $("#title").textContent = session.title || "New chat";
-  selects.mode?.setValue(state.mode);
   selects.model?.setValue(state.modelChoice);
 
   const box = $("#messages");
@@ -527,6 +539,19 @@ function skillLine(name) {
   scrollDown();
 }
 
+function goalLine(payload) {
+  let el = document.querySelector(".goal-line");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "goal-line";
+    $("#messages").appendChild(el);
+  }
+  const label = payload.status === "done" ? "GOAL COMPLETE"
+    : payload.step ? `step: ${payload.step}` : "goal set";
+  el.innerHTML = `${icon("spark")} <b>${esc(payload.text)}</b> · ${esc(label)}`;
+  scrollDown();
+}
+
 function permissionLine(payload) {
   const el = document.createElement("div");
   el.className = "permission-card";
@@ -566,6 +591,8 @@ function handleEvent(block, reply) {
     reply.body.innerHTML = `<span style="color:var(--danger)">${esc(data.message)}</span>`;
   } else if (name === "skill") {
     skillLine(data.name);
+  } else if (name === "goal") {
+    goalLine(data);
   } else if (name === "artifact") {
     const card = document.createElement("div");
     card.innerHTML = artifactCard(data);
@@ -605,6 +632,7 @@ async function refreshMemories() {
   selects.memAddCategory?.setOptions(data.categories.map((c) => ({ value: c, label: c })));
   selects.memAddCategory?.setValue("temporary");
   renderMemoryGroups();
+  $("#view-status").textContent = viewStatus(state.view);
 }
 
 function renderMemoryGroups() {
@@ -678,10 +706,11 @@ async function refreshTools() {
   } catch { state.toolActivity = []; }
   if (state.view === "tools") renderTools();
   if (state.view === "usage") renderUsage();
+  $("#view-status").textContent = viewStatus(state.view);
 }
 
 async function configureTool(name) {
-  if (name === "filesystem") {
+  if (name === "files") {
     const current = state.workspace?.root || "";
     const path = prompt("Workspace folder Atlas may read and edit", current);
     if (!path) return;
@@ -697,7 +726,7 @@ async function configureTool(name) {
 }
 
 function toolCard(t) {
-  const configurable = ["filesystem", "web_search", "web_fetch"].includes(t.id);
+  const configurable = ["files", "web_search", "web_fetch"].includes(t.id);
   return `<article class="card">
     <div class="card-head">${icon(CATEGORY_ICON[t.category] || "plug")}<h3>${esc(t.id)}</h3></div>
     <p>${esc(t.description)}</p>
@@ -741,6 +770,7 @@ async function refreshSkills() {
     state.skills = (await api("/api/skills")).skills || [];
   } catch { state.skills = []; }
   if (state.view === "skills") renderSkills();
+  $("#view-status").textContent = viewStatus(state.view);
 }
 
 function renderSkills() {
@@ -790,6 +820,7 @@ async function refreshArtifacts() {
     state.artifacts = (await api("/api/artifacts")).artifacts || [];
   } catch { state.artifacts = []; }
   if (state.view === "artifacts") renderArtifacts();
+  $("#view-status").textContent = viewStatus(state.view);
 }
 
 function renderArtifactList(items) {
@@ -839,6 +870,8 @@ const THEMES = [
   { id: "midnight", label: "Midnight", note: "pitch black · deep blue" },
   { id: "mono", label: "Mono", note: "black · white/gray" },
   { id: "forest", label: "Forest", note: "black · muted green" },
+  { id: "graphite", label: "Graphite", note: "pure black · white" },
+  { id: "funky", label: "Funky", note: "near-black · soft violet" },
 ];
 
 const ACCENTS = [
@@ -846,6 +879,7 @@ const ACCENTS = [
   { label: "Blue", value: "#5b8cff" },
   { label: "Green", value: "#5fbf87" },
   { label: "White", value: "#e8e8e8" },
+  { label: "Violet", value: "#b18cff" },
 ];
 
 function paintThemeChoices() {
@@ -995,6 +1029,11 @@ function toggleUsagePanel(force) {
   rememberLocal("usageOpen", state.usageOpen);
   renderUsagePanel();
   if (state.usageOpen) refreshMemories().then(renderUsagePanel).catch(() => {});
+  if (new URLSearchParams(location.search).has("slash")) {
+    const input = $("#input");
+    input.value = "/";
+    input.dispatchEvent(new Event("input"));
+  }
 }
 
 function cycleUsageDock() {
@@ -1010,10 +1049,10 @@ const dlg = $("#configure");
 let runtimeCache = { at: 0, list: [] };
 
 function fsAvailable() {
-  return state.tools.find((t) => t.name === "filesystem")?.available || false;
+  return state.tools.find((t) => t.id === "files")?.available || false;
 }
 function fsNote() {
-  const fs = state.tools.find((t) => t.name === "filesystem");
+  const fs = state.tools.find((t) => t.id === "files");
   return fs?.workspace || fs?.error || "no workspace configured";
 }
 
@@ -1143,6 +1182,100 @@ $("#config-form").onsubmit = async (e) => {
   } catch (err) { $("#cfg-status").textContent = err.message; }
 };
 
+/* --------------------------------------------------------- slash palette */
+
+const SLASH_ACTIONS = [
+  { id: "goal", label: "Goal", desc: "Set an objective for the agent to work toward", icon: "spark" },
+  { id: "skills", label: "Skills", desc: "Open the skills workspace", icon: "spark" },
+  { id: "tools", label: "Tools", desc: "Open the tools workspace", icon: "tools" },
+  { id: "memory", label: "Memory", desc: "Open saved memories", icon: "memory" },
+  { id: "usage", label: "Usage", desc: "Open local usage", icon: "pulse" },
+];
+
+let slashItems = [];
+let slashIndex = 0;
+
+function slashEntries() {
+  // Installed skills come straight from /api/skills (skills.list_skills), so
+  // this reflects what the active profile actually has on disk.
+  const skills = state.skills.map((s) => ({
+    id: s.id,
+    label: s.name || s.id,
+    desc: s.description || "",
+    icon: "spark",
+    prefix: "/skill:",
+    group: "skill",
+    enabled: s.enabled !== false,
+  }));
+  const actions = SLASH_ACTIONS.map((a) => ({ ...a, prefix: "/", group: "action", enabled: true }));
+  return [...skills, ...actions];
+}
+
+function renderSlash(query) {
+  const all = slashEntries();
+  const raw = query.toLowerCase().replace(/^\//, "");
+  // "/skill" should reveal the installed skills themselves, not just the
+  // "Skills" workspace action that happens to share the word. "/skill:foo"
+  // narrows those skills by id, name, or description.
+  const skillMode = raw === "skill" || raw.startsWith("skill:");
+  const term = skillMode ? raw.replace(/^skill:/, "") : raw;
+  slashItems = all
+    .filter((item) => {
+      if (skillMode && item.group !== "skill") return false;
+      return !term
+        || item.id.toLowerCase().includes(term)
+        || item.label.toLowerCase().includes(term)
+        || (item.group === "skill" && item.desc.toLowerCase().includes(term));
+    })
+    .sort((a, b) => {
+      if (a.group !== b.group) return a.group === "skill" ? -1 : 1;
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      return 0;
+    })
+    .slice(0, 8);
+  slashIndex = 0;
+  const menu = $("#slash-menu");
+  if (!slashItems.length) { menu.hidden = true; menu.innerHTML = ""; return; }
+  menu.hidden = false;
+  paintSlash(true);
+}
+
+function paintSlash(animate = false) {
+  const menu = $("#slash-menu");
+  menu.classList.toggle("slash-animate", animate);
+  menu.innerHTML = slashItems.map((item, i) => {
+    const suffix = item.group === "skill" && !item.enabled ? " · disabled" : "";
+    return `
+    <button type="button" class="slash-item ${i === slashIndex ? "active" : ""}" data-i="${i}">
+      ${icon(item.icon)}
+      <span class="s-label">${esc(item.prefix + item.id)}</span>
+      <span class="s-desc">${esc(item.desc + suffix)}</span>
+    </button>`;
+  }).join("");
+  menu.querySelectorAll("button").forEach((button) => {
+    button.onclick = () => chooseSlash(Number(button.dataset.i));
+  });
+}
+
+function chooseSlash(index) {
+  const item = slashItems[index];
+  if (!item) return;
+  const input = $("#input");
+  if (item.prefix === "/skill:") {
+    input.value = `/skill:${item.id} `;
+  } else if (item.id === "goal") {
+    input.value = "/goal ";
+  } else {
+    input.value = "";
+    setView(item.id);
+  }
+  $("#slash-menu").hidden = true;
+  input.focus();
+  input.dispatchEvent(new Event("input"));
+}
+
+function closeSlash() { $("#slash-menu").hidden = true; }
+
 /* --------------------------------------------------------------- events */
 
 $("#composer").addEventListener("submit", async (e) => {
@@ -1156,12 +1289,40 @@ $("#composer").addEventListener("submit", async (e) => {
 });
 
 $("#input").addEventListener("keydown", (e) => {
+  const menu = $("#slash-menu");
+  if (!menu.hidden && slashItems.length) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      slashIndex = (slashIndex + 1) % slashItems.length;
+      paintSlash();
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      slashIndex = (slashIndex - 1 + slashItems.length) % slashItems.length;
+      paintSlash();
+      return;
+    }
+    if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+      e.preventDefault();
+      chooseSlash(slashIndex);
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeSlash();
+      return;
+    }
+  }
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#composer").requestSubmit(); }
   if (e.key === "Escape" && state.sending) state.controller?.abort();
 });
 $("#input").addEventListener("input", (e) => {
   e.target.style.height = "auto";
   e.target.style.height = Math.min(e.target.scrollHeight, innerHeight * 0.4) + "px";
+  const value = e.target.value.trimStart();
+  if (value.startsWith("/") && !value.includes(" ")) renderSlash(value);
+  else closeSlash();
 });
 $("#stop").onclick = () => state.controller?.abort();
 $("#new-chat").onclick = () => { setView("chat"); newChat(); };
@@ -1186,19 +1347,9 @@ document.addEventListener("keydown", (e) => {
   state.usagePos = saved("usagePos", "right");
   state.usageOpen = saved("usageOpen", "false") === "true";
   const savedTheme = saved("theme", "atlas");
-  applyTheme(THEMES.some((t) => t.id === savedTheme) ? savedTheme : "atlas", saved("accent", ""));
-
-  selects.mode = makeSelect($("#mode-select"), {
-    placeholder: "Coach",
-    onChange: async (mode) => {
-      state.mode = mode;
-      if (!state.current) return;
-      await api(`/api/sessions/${state.current}`, {
-        method: "PATCH", body: JSON.stringify({ mode }),
-      });
-      await refreshSessions();
-    },
-  });
+  const urlTheme = new URLSearchParams(location.search).get("theme");
+  const startTheme = urlTheme && THEMES.some((t) => t.id === urlTheme) ? urlTheme : savedTheme;
+  applyTheme(THEMES.some((t) => t.id === startTheme) ? startTheme : "atlas", saved("accent", ""));
 
   selects.model = makeSelect($("#model-select"), {
     placeholder: "Model",
@@ -1251,13 +1402,18 @@ document.addEventListener("keydown", (e) => {
   await refreshModels();
   refreshRuntimes().catch(() => {});
   refreshTools().catch(() => {});
-  refreshSkills().catch(() => {});
+  await refreshSkills().catch(() => {});
   refreshArtifacts().catch(() => {});
   await refreshSessions();
   if (state.sessions.length) await openSession(state.sessions[0].id);
   else await newChat();
 
   if (state.usageOpen) refreshMemories().then(renderUsagePanel).catch(() => {});
+  if (new URLSearchParams(location.search).has("slash")) {
+    const input = $("#input");
+    input.value = "/";
+    input.dispatchEvent(new Event("input"));
+  }
   if (location.hash === "#new") newChat();
   const testMenu = new URLSearchParams(location.search).get("menu");
   if (testMenu === "model" || location.hash === "#model-menu") selects.model.open();

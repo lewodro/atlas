@@ -36,10 +36,12 @@ from urllib.parse import parse_qs, unquote, urlparse
 import activity
 import artifacts
 import fstools
+import goals
 import librarian
 import memory
 import models
 import modes
+import orchestrator
 import profiles
 import registry
 import skills
@@ -134,21 +136,41 @@ def _tool_round(messages: list[dict], session_id: str, user_text: str, model: st
 
 
 def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = None):
-    """SSE generator: delta / tool / skill / artifact / permission / done / error."""
+    """SSE generator: delta / tool / skill / goal / artifact / done / error."""
     history = memory.load_recent(24, session_id)
 
-    skill_id = skills.select_skill(user_text)
-    messages: list[dict] = [
-        {"role": "system", "content": build_system(mode, user_text, skill_id)}
-    ]
+    # Slash commands select a skill or set a goal without a separate mode.
+    clean = user_text.strip()
+    forced_skill: str | None = None
+    if clean.startswith("/skill:"):
+        parts = clean.split(maxsplit=1)
+        forced_skill = parts[0].split(":", 1)[1].strip()
+        clean = parts[1] if len(parts) > 1 else "Use the selected skill"
+        skill_id = forced_skill
+    elif clean.startswith("/goal"):
+        text = clean[len("/goal"):].strip()
+        if text:
+            goal = goals.create(text)
+            yield ("goal", {"id": goal["id"], "text": text, "status": "active"})
+            clean = f"Work toward this goal: {text}"
+        skill_id = skills.select_skill(clean)
+    else:
+        skill_id = skills.select_skill(clean)
+
+    role = orchestrator.select_role(clean)
+    system = build_system(mode, clean, skill_id)
+    goal_block = goals.block()
+    if goal_block:
+        system += "\n\n" + goal_block
+    messages: list[dict] = [{"role": "system", "content": system}]
     messages += history
-    messages.append({"role": "user", "content": user_text})
+    messages.append({"role": "user", "content": clean})
     memory.log_turn("user", user_text, mode, session_id)
 
     if skill_id:
         skill = skills.load_skill(skill_id)
         if skill:
-            yield ("skill", {"id": skill_id, "name": skill["name"]})
+            yield ("skill", {"id": skill_id, "name": skill["name"], "role": role})
 
     personal = re.search(
         r"who am i|my name|what do i study|what do i know about me|my sport|my project",
@@ -240,6 +262,14 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                 messages.append({
                     "role": "tool", "tool_call_id": call_id, "content": tool_text,
                 })
+                active_goal = goals.current()
+                if active_goal:
+                    goals.update(active_goal["id"], "running",
+                                 f"{call['name']}: {tool_text[:120]}")
+                    yield ("goal", {
+                        "id": active_goal["id"], "text": active_goal["text"],
+                        "status": "running", "step": call["name"],
+                    })
                 if (skill_id == "web-research" and call["name"] == "web_search"
                         and not fetched_for_skill and result["ok"]):
                     messages.append({
@@ -263,7 +293,16 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                 yield ("delta", {"text": msg.content})
 
         answer = "".join(answer_parts).strip() or "(no answer)"
-        memory.log_turn("assistant", answer, mode, session_id)
+        active_goal = goals.current()
+        if active_goal:
+            if "GOAL COMPLETE" in answer.upper():
+                goals.finish(active_goal["id"])
+                yield ("goal", {"id": active_goal["id"], "text": active_goal["text"],
+                                "status": "done"})
+            else:
+                goals.update(active_goal["id"], "running", f"answer: {answer[:120]}")
+        memory.log_turn("assistant", answer.replace("GOAL COMPLETE", "").strip()
+                        or "(goal complete)", mode, session_id)
         memory.update_session(session_id)
         yield ("done", {"session": session_id, "text": answer})
         threading.Thread(target=_journal, args=(user_text,), daemon=True).start()
@@ -363,6 +402,8 @@ class Handler(BaseHTTPRequestHandler):
                         "reachable": bool(models.list_models(other, "")),
                     })
                 return self._json(models.describe())
+            if path == "/api/goal":
+                return self._json({"goal": goals.current()})
             if path == "/api/tools":
                 return self._json({"tools": registry.metadata()})
             if path == "/api/tools/activity":
@@ -472,6 +513,18 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/memories/clear":
                 return self._json({"deleted": profiles.clear(profiles.active())})
 
+            if path == "/api/goal":
+                action = body.get("action") or "status"
+                if action == "set":
+                    item = goals.create(body.get("text", ""))
+                    return self._json({"goal": item}, 201)
+                if action == "clear":
+                    item = goals.current()
+                    if item:
+                        goals.finish(item["id"])
+                    return self._json({"ok": True})
+                return self._json({"goal": goals.current()})
+
             if path == "/api/tools/permission":
                 ok = decide_permission(body.get("token", ""), body.get("allow") is True)
                 return self._json({"ok": ok})
@@ -497,7 +550,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **models.describe(), "saved": saved})
 
             if path == "/api/sessions":
-                mode = body.get("mode") or "coach"
+                mode = modes.canonical(body.get("mode") or "")
                 sid = memory.create_session(mode=mode, model=body.get("model"))
                 return self._json({"id": sid}, 201)
 
@@ -537,7 +590,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "empty message"}, 400)
 
                 session = memory.get_session(sid) or {}
-                mode = body.get("mode") or session.get("mode") or "coach"
+                mode = modes.canonical(body.get("mode") or session.get("mode") or "")
                 model = body.get("model") or session.get("model") or None
                 if body.get("model"):
                     memory.update_session(sid, model=body["model"])

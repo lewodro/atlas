@@ -53,6 +53,13 @@ Nothing outside the configured workspace is reachable. Refused:
 Only `read`, `write` and `list` exist. There is no delete, move, glob or shell
 primitive. Writes are atomic and inherit the existing file mode.
 
+## One file tool
+
+`filesystem` and `file_manager` were two overlapping tools. They are now one
+tool, `files`. Keeping both confused small models and doubled the schema cost.
+All workspace file operations live in `files`, and `atlas fs` / `atlas fm` are
+both CLI shortcuts to it.
+
 ## File manager
 
 ```bash
@@ -69,6 +76,13 @@ are confined to the workspace; hidden files, keys, symlinks and the workspace
 root itself are refused. Writes register a real artifact.
 
 ## Terminal (allowlisted, not a shell)
+
+Codex-style agents use a general shell. Atlas deliberately does **not**: a 3B
+model with an unrestricted shell is a security risk. The terminal here is a
+fixed allowlist with no pipes, redirects or arbitrary executables. On a larger
+local model (12B–20B) the same small tool set still works — fewer, clearer
+tools usually beat many overlapping ones. The whole registry is 10 tools with
+short descriptions so it fits a small context window.
 
 ```bash
 atlas term ls
