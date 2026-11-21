@@ -539,6 +539,19 @@ function skillLine(name) {
   scrollDown();
 }
 
+function goalLine(payload) {
+  let el = document.querySelector(".goal-line");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "goal-line";
+    $("#messages").appendChild(el);
+  }
+  const label = payload.status === "done" ? "GOAL COMPLETE"
+    : payload.step ? `step: ${payload.step}` : "goal set";
+  el.innerHTML = `${icon("spark")} <b>${esc(payload.text)}</b> · ${esc(label)}`;
+  scrollDown();
+}
+
 function permissionLine(payload) {
   const el = document.createElement("div");
   el.className = "permission-card";
@@ -578,6 +591,8 @@ function handleEvent(block, reply) {
     reply.body.innerHTML = `<span style="color:var(--danger)">${esc(data.message)}</span>`;
   } else if (name === "skill") {
     skillLine(data.name);
+  } else if (name === "goal") {
+    goalLine(data);
   } else if (name === "artifact") {
     const card = document.createElement("div");
     card.innerHTML = artifactCard(data);
@@ -1014,6 +1029,11 @@ function toggleUsagePanel(force) {
   rememberLocal("usageOpen", state.usageOpen);
   renderUsagePanel();
   if (state.usageOpen) refreshMemories().then(renderUsagePanel).catch(() => {});
+  if (new URLSearchParams(location.search).has("slash")) {
+    const input = $("#input");
+    input.value = "/";
+    input.dispatchEvent(new Event("input"));
+  }
 }
 
 function cycleUsageDock() {
@@ -1162,6 +1182,75 @@ $("#config-form").onsubmit = async (e) => {
   } catch (err) { $("#cfg-status").textContent = err.message; }
 };
 
+/* --------------------------------------------------------- slash palette */
+
+const SLASH_ACTIONS = [
+  { id: "goal", label: "Goal", desc: "Set an objective for the agent to work toward", icon: "spark" },
+  { id: "skills", label: "Skills", desc: "Open the skills workspace", icon: "spark" },
+  { id: "tools", label: "Tools", desc: "Open the tools workspace", icon: "tools" },
+  { id: "memory", label: "Memory", desc: "Open saved memories", icon: "memory" },
+  { id: "usage", label: "Usage", desc: "Open local usage", icon: "pulse" },
+];
+
+let slashItems = [];
+let slashIndex = 0;
+
+function slashEntries() {
+  const skills = state.skills.map((s) => ({
+    id: s.id,
+    label: s.name || s.id,
+    desc: s.description || "",
+    icon: "spark",
+    prefix: "/skill:",
+  }));
+  const actions = SLASH_ACTIONS.map((a) => ({ ...a, prefix: "/" }));
+  return [...skills, ...actions];
+}
+
+function renderSlash(query) {
+  const all = slashEntries();
+  const q = query.toLowerCase().replace(/^\//, "");
+  slashItems = all.filter((item) =>
+    !q || item.id.toLowerCase().includes(q) || item.label.toLowerCase().includes(q)
+  ).slice(0, 8);
+  slashIndex = 0;
+  const menu = $("#slash-menu");
+  if (!slashItems.length) { menu.hidden = true; menu.innerHTML = ""; return; }
+  paintSlash();
+  menu.hidden = false;
+}
+
+function paintSlash() {
+  $("#slash-menu").innerHTML = slashItems.map((item, i) => `
+    <button type="button" class="slash-item ${i === slashIndex ? "active" : ""}" data-i="${i}">
+      ${icon(item.icon)}
+      <span class="s-label">${esc(item.prefix + item.id)}</span>
+      <span class="s-desc">${esc(item.desc)}</span>
+    </button>`).join("");
+  $("#slash-menu").querySelectorAll("button").forEach((button) => {
+    button.onclick = () => chooseSlash(Number(button.dataset.i));
+  });
+}
+
+function chooseSlash(index) {
+  const item = slashItems[index];
+  if (!item) return;
+  const input = $("#input");
+  if (item.prefix === "/skill:") {
+    input.value = `/skill:${item.id} `;
+  } else if (item.id === "goal") {
+    input.value = "/goal ";
+  } else {
+    input.value = "";
+    setView(item.id);
+  }
+  $("#slash-menu").hidden = true;
+  input.focus();
+  input.dispatchEvent(new Event("input"));
+}
+
+function closeSlash() { $("#slash-menu").hidden = true; }
+
 /* --------------------------------------------------------------- events */
 
 $("#composer").addEventListener("submit", async (e) => {
@@ -1175,12 +1264,40 @@ $("#composer").addEventListener("submit", async (e) => {
 });
 
 $("#input").addEventListener("keydown", (e) => {
+  const menu = $("#slash-menu");
+  if (!menu.hidden && slashItems.length) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      slashIndex = (slashIndex + 1) % slashItems.length;
+      paintSlash();
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      slashIndex = (slashIndex - 1 + slashItems.length) % slashItems.length;
+      paintSlash();
+      return;
+    }
+    if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+      e.preventDefault();
+      chooseSlash(slashIndex);
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeSlash();
+      return;
+    }
+  }
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#composer").requestSubmit(); }
   if (e.key === "Escape" && state.sending) state.controller?.abort();
 });
 $("#input").addEventListener("input", (e) => {
   e.target.style.height = "auto";
   e.target.style.height = Math.min(e.target.scrollHeight, innerHeight * 0.4) + "px";
+  const value = e.target.value.trimStart();
+  if (value.startsWith("/") && !value.includes(" ")) renderSlash(value);
+  else closeSlash();
 });
 $("#stop").onclick = () => state.controller?.abort();
 $("#new-chat").onclick = () => { setView("chat"); newChat(); };
@@ -1260,13 +1377,18 @@ document.addEventListener("keydown", (e) => {
   await refreshModels();
   refreshRuntimes().catch(() => {});
   refreshTools().catch(() => {});
-  refreshSkills().catch(() => {});
+  await refreshSkills().catch(() => {});
   refreshArtifacts().catch(() => {});
   await refreshSessions();
   if (state.sessions.length) await openSession(state.sessions[0].id);
   else await newChat();
 
   if (state.usageOpen) refreshMemories().then(renderUsagePanel).catch(() => {});
+  if (new URLSearchParams(location.search).has("slash")) {
+    const input = $("#input");
+    input.value = "/";
+    input.dispatchEvent(new Event("input"));
+  }
   if (location.hash === "#new") newChat();
   const testMenu = new URLSearchParams(location.search).get("menu");
   if (testMenu === "model" || location.hash === "#model-menu") selects.model.open();
