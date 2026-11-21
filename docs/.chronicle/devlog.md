@@ -29,3 +29,4 @@
 - docs/memory.md explains the memory hierarchy and recall path.
 - docs/tools.md enumerates the built-in tool set.
 - docs/architecture.md gives the high-level module map.
+- Chronicle complete: 30 small entries committed without touching published docs.
