@@ -22,3 +22,4 @@
 - artifacts.py persists generated files for later retrieval.
 - librarian.py indexes notes so recall can find older material.
 - bench.py and eval/ measure behavioral regressions between changes.
+- tests/ uses unittest; run via atlas test or python -m unittest discover.
