@@ -86,10 +86,6 @@ function friendlyModel(id) {
   return name.replace(/\s+/g, " ").trim().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function friendlyMode(mode) {
-  return { coach: "Coach", tutor: "Tutor", review: "Review", debug: "Debug", plan: "Plan" }[mode] || mode;
-}
-
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -355,8 +351,6 @@ async function refreshStats() {
   const data = await api("/api/stats");
   state.stats = data;
   state.modes = data.modes || [];
-  selects.mode?.setOptions(state.modes.map((m) => ({ value: m, label: friendlyMode(m) })));
-  selects.mode?.setValue(state.mode);
   $("#activity-label").textContent = data.frontier ? "Frontier" : "Local";
   $("#runtime-label").textContent = data.where ? data.where.split(" @ ")[0] : "Local runtime";
   renderUsagePanel();
@@ -423,7 +417,6 @@ async function openSession(id) {
   state.mode = session.mode;
   state.modelChoice = session.model || "";
   $("#title").textContent = session.title || "New chat";
-  selects.mode?.setValue(state.mode);
   selects.model?.setValue(state.modelChoice);
 
   const box = $("#messages");
@@ -1187,18 +1180,6 @@ document.addEventListener("keydown", (e) => {
   state.usageOpen = saved("usageOpen", "false") === "true";
   const savedTheme = saved("theme", "atlas");
   applyTheme(THEMES.some((t) => t.id === savedTheme) ? savedTheme : "atlas", saved("accent", ""));
-
-  selects.mode = makeSelect($("#mode-select"), {
-    placeholder: "Coach",
-    onChange: async (mode) => {
-      state.mode = mode;
-      if (!state.current) return;
-      await api(`/api/sessions/${state.current}`, {
-        method: "PATCH", body: JSON.stringify({ mode }),
-      });
-      await refreshSessions();
-    },
-  });
 
   selects.model = makeSelect($("#model-select"), {
     placeholder: "Model",
