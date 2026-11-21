@@ -21,3 +21,4 @@
 - context.py assembles the context window sent to the model.
 - artifacts.py persists generated files for later retrieval.
 - librarian.py indexes notes so recall can find older material.
+- bench.py and eval/ measure behavioral regressions between changes.
