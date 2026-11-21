@@ -9,6 +9,22 @@ All user-specific state lives in gitignored `data/` and `notes/`. `context.py`
 assembles the model prompt from that state at runtime and contains no personal
 facts. `tests/test_agent.py` checks tracked source files for local identifiers.
 
+## One agent and orchestrator
+
+There is one mode, `agent`. `modes.py` keeps old names as aliases but does not
+advertise them. Skills are loaded on demand by `skills.select_skill()` or by
+the orchestrator role plan.
+
+`orchestrator.py` defines roles (`general`, `study`, `research`, `engineer`,
+`memory`). A role is only a bundle of skill ids — never a separate model or
+prompt family. `atlas agents plan "..."` shows the role and skills for a
+request before any model call.
+
+Instances are named workspace + data pairs. `atlas agents run ID --port N`
+starts a server with `ATLAS_WORKSPACE`, `ATLAS_DATA_DIR` and `ATLAS_NOTES_DIR`
+set, so chats, memories, artifacts and notes are fully isolated between
+instances. This is the base for running several agents later.
+
 ## Tool registry
 
 `registry.py` is the single source of truth. A provider registers a `ToolSpec`
@@ -27,6 +43,12 @@ with:
 The same registry produces the model's tool list, `atlas tools`, the server's
 `/api/tools`, and the GUI Tools page. A new provider can call
 `registry.register(ToolSpec(...))` without touching the loop.
+
+## Study tools
+
+`plot_function` draws a real text plot with a safe AST parser (no `eval` of
+arbitrary code). Supported: `x**2`, `sin(x)`, `sqrt(abs(x))`, constants
+`pi`/`e`. The `study` skill uses it to draw functions and keep answers short.
 
 ## Real tools
 

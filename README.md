@@ -13,6 +13,9 @@
 [![Permissions](https://img.shields.io/badge/permissions-ALLOW%20%2F%20ASK%20%2F%20DENY-6f42c1)]()
 [![Local data](https://img.shields.io/badge/local%20data-never%20committed-2ea44f)]()
 [![Terminal](https://img.shields.io/badge/terminal-allowlisted-22d3a6)]()
+[![Agent](https://img.shields.io/badge/agent-unified-22d3a6)]()
+[![Orchestrator](https://img.shields.io/badge/orchestrator-roles%20%26%20instances-6f42c1)]()
+[![Study](https://img.shields.io/badge/study-notes%20%26%20math-22d3a6)]()
 
 ```
 you> I'm a first-year CS student, 8 GB M1, learning Python and C.
@@ -290,6 +293,34 @@ For an explicit write, without model extraction:
 ```bash
 atlas remember "I am learning Rust."
 ```
+
+---
+
+## One agent, not modes
+
+Atlas has **one** mode: agent. Study, research, code and memory are skills the
+agent loads when needed, not separate personas. There is no mode switcher.
+
+```bash
+atlas                              # unified agent
+atlas study "explain derivatives"  # one-shot study session
+atlas agents roles                 # orchestrator roles
+atlas agents plan "study this function"
+atlas agents create WS ~/devAI/AtlasWSPC
+atlas agents run WS --port 7778    # isolated instance
+atlas agents list
+```
+
+Study writes comprehensive notes to the workspace, makes large summaries, and
+draws real function plots with `plot_function` (`x**2`, `sin(x)`, …) — all
+parsed safely, no code execution. See **[docs/agent.md](docs/agent.md)**.
+
+### Multiple instances
+
+Each instance gets its own workspace, SQLite data and notes folder, so you can
+run several Atlas processes for different projects without sharing memory.
+Set `ATLAS_DATA_DIR` / `ATLAS_WORKSPACE` for manual isolation; `atlas agents run`
+does both automatically.
 
 ---
 
