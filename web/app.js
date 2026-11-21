@@ -25,6 +25,7 @@ const state = {
   sending: false,
   controller: null,
   filter: "",
+  selected: new Set(),
   memories: [],
   categories: [],
   view: "chat",
