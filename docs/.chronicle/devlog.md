@@ -10,3 +10,4 @@
 - models.py --use switches the active model for the current profile.
 - memory.py exposes both stats and semantic recall through the atlas CLI.
 - activity.py --scan appends a timestamped activity snapshot.
+- consolidate.py folds recent activity into long-term notes during sleep.
