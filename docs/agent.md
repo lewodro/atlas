@@ -2,6 +2,19 @@
 
 Atlas is a small agent loop, not a chat wrapper. Everything below runs locally.
 
+## Why one file tool
+
+Early Atlas had `filesystem` (read/write/list) and `file_manager` (write/mkdir/
+move/delete). They overlapped, cost two schemas and confused a 3B model. They
+are now one `files` tool with six actions. `atlas fs` and `atlas fm` are CLI
+aliases to it.
+
+The terminal is a fixed allowlist, not a Codex-style general shell. A small
+model with an unrestricted shell can destroy data; the allowlist keeps every
+command read-only, fixed-flag and confinable to the workspace. Larger local
+models (12B–20B) do not need more tools — ten short schemas with clear names
+usually outperform a large overlapping set, and the same registry scales.
+
 ## Local info vs public repo
 
 The repo is clean by design: only tools, capabilities, skills, UI and docs.
