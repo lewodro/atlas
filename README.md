@@ -306,6 +306,20 @@ atlas remember "I am learning Rust."
 
 ---
 
+## Slash palette and goals
+
+Type `/` in the composer to see skills and commands. Pick a skill to load its
+instructions for that turn, or use `/goal <objective>` to give the agent a goal
+to work toward with real tools and bounded steps.
+
+```bash
+atlas goal set "inspect the repo and summarize the last commit"
+atlas goal status
+atlas goal clear
+```
+
+---
+
 ## One agent, not modes
 
 Atlas has **one** mode: agent. Study, research, code and memory are skills the

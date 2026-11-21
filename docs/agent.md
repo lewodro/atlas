@@ -2,6 +2,26 @@
 
 Atlas is a small agent loop, not a chat wrapper. Everything below runs locally.
 
+## Slash palette and goals
+
+Typing `/` in the composer opens a palette of installed skills and workspace
+commands. Skills appear as `/skill:<id>` and load that exact SKILL.md for the
+turn; actions include `/goal`, `/skills`, `/tools`, `/memory` and `/usage`.
+Arrow keys and Enter select; Escape closes.
+
+`/goal <objective>` creates a local goal and starts a bounded agent loop:
+
+```
+goal set → model chooses tools → results recorded as progress
+         → more tools if needed → GOAL COMPLETE → goal marked done
+```
+
+Goals are stored per profile in `data/atlas.db`. The system prompt carries one
+compact GOAL block (text, status, last six progress notes), so even a 3B model
+can keep the objective in view. Tool rounds are capped, permissions still apply,
+and the loop emits real `goal` events to the UI. CLI equivalents:
+`atlas goal set "..."`, `atlas goal status`, `atlas goal clear`.
+
 ## Why one file tool
 
 Early Atlas had `filesystem` (read/write/list) and `file_manager` (write/mkdir/
