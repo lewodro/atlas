@@ -9,3 +9,4 @@
 - llm.py centralizes provider calls so models.py can swap backends cleanly.
 - models.py --use switches the active model for the current profile.
 - memory.py exposes both stats and semantic recall through the atlas CLI.
+- activity.py --scan appends a timestamped activity snapshot.
