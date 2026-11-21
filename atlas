@@ -33,6 +33,8 @@ case "${1:-}" in
   tools)  shift; exec uv run python tools_cli.py tools "$@" ;;
   skills) shift; exec uv run python tools_cli.py skills "$@" ;;
   artifacts) shift; exec uv run python tools_cli.py artifacts "$@" ;;
+  fm)     shift; exec uv run python tools_cli.py fm "$@" ;;
+  term)   shift; exec uv run python tools_cli.py term "$@" ;;
   workspace) shift; exec uv run python tools_cli.py workspace "$@" ;;
   net)    shift; exec uv run python tools_cli.py net "$@" ;;
   fs)     shift; exec uv run python tools_cli.py fs "$@" ;;

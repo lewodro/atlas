@@ -227,6 +227,7 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                         "name": call["name"], "result": tool_text,
                         "ok": result["ok"], "status": "ok" if result["ok"] else "error",
                         "duration_ms": result["duration_ms"],
+                        "args": json.dumps(args, ensure_ascii=False)[:220],
                     })
                     hint = result.get("artifact_hint")
                     if result["ok"] and hint:

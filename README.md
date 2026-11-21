@@ -12,6 +12,7 @@
 [![Skills](https://img.shields.io/badge/skills-4%20lazy--loaded-22d3a6)]()
 [![Permissions](https://img.shields.io/badge/permissions-ALLOW%20%2F%20ASK%20%2F%20DENY-6f42c1)]()
 [![Local data](https://img.shields.io/badge/local%20data-never%20committed-2ea44f)]()
+[![Terminal](https://img.shields.io/badge/terminal-allowlisted-22d3a6)]()
 
 ```
 you> I'm a first-year CS student, 8 GB M1, learning Python and C.
@@ -213,6 +214,9 @@ Three tools are live in chat and on the CLI. See **[docs/tools.md](docs/tools.md
 | Web search | DuckDuckGo results, no key (Brave optional) | `atlas net search "query"` |
 | Web fetch | Readable text from a public page, with source URL | `atlas net fetch https://…` |
 | Filesystem | Read / write / list inside one chosen workspace | `atlas fs read path` |
+| File manager | mkdir / move / delete with approval | `atlas fm list` |
+| Terminal | Allowlisted `ls`, `git status`, `git log`, … | `atlas term ls` |
+| Git | Local status / diff / log | `atlas tools run git_status` |
 
 Network calls are pinned to public IPs with SSRF checks on every redirect. Filesystem access is confined to an explicit workspace; hidden files, keys, symlinks and path traversal are refused. Tool output is treated as untrusted data, never as instructions.
 
@@ -221,9 +225,10 @@ atlas tools                              # status of every tool
 atlas tools configure --workspace ~/dev/project
 atlas net search "Python lists tutorial" --limit 3
 atlas net fetch https://example.com
-printf 'hello' | atlas fs write notes/hello.txt
+atlas term git status --short
+atlas fm write notes/hello.txt --text hello
 atlas fs read notes/hello.txt
-uv run python -m unittest discover -s tests -v   # 33 offline tests
+uv run python -m unittest discover -s tests -v   # 52 offline tests
 ```
 
 ---
