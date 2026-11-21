@@ -5,6 +5,17 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
 [![Local](https://img.shields.io/badge/runs-100%25%20local-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-black)]()
+[![Web search](https://img.shields.io/badge/web%20search-DuckDuckGo-22d3a6)]()
+[![Web fetch](https://img.shields.io/badge/web%20fetch-SSRF%20guarded-22d3a6)]()
+[![Filesystem](https://img.shields.io/badge/filesystem-workspace%20confined-22d3a6)]()
+[![Tools](https://img.shields.io/badge/tools-6%20live-2ea44f)]()
+[![Skills](https://img.shields.io/badge/skills-4%20lazy--loaded-22d3a6)]()
+[![Permissions](https://img.shields.io/badge/permissions-ALLOW%20%2F%20ASK%20%2F%20DENY-6f42c1)]()
+[![Local data](https://img.shields.io/badge/local%20data-never%20committed-2ea44f)]()
+[![Terminal](https://img.shields.io/badge/terminal-allowlisted-22d3a6)]()
+[![Agent](https://img.shields.io/badge/agent-unified-22d3a6)]()
+[![Orchestrator](https://img.shields.io/badge/orchestrator-roles%20%26%20instances-6f42c1)]()
+[![Study](https://img.shields.io/badge/study-notes%20%26%20math-22d3a6)]()
 
 ```
 you> I'm a first-year CS student, 8 GB M1, learning Python and C.
@@ -24,6 +35,25 @@ anywhere.
 
 ---
 
+## Screenshots
+
+| | | |
+|---|---|---|
+| ![Atlas chat](docs/screenshots/chat.png) | ![Usage](docs/screenshots/usage.png) | ![Memory](docs/screenshots/memory.png) |
+| Near-black chat &amp; welcome | Real usage data | Plain-language memory |
+
+| | |
+|---|---|
+| ![Tools](docs/screenshots/tools.png) | ![Skills](docs/screenshots/skills.png) |
+| Tool workspace | Lazy-loaded skills |
+
+| | |
+|---|---|
+| ![Artifacts](docs/screenshots/artifacts.png) | ![Settings](docs/screenshots/settings.png) |
+| Real artifacts with previews | Themes, models, tools, memory |
+
+---
+
 ## Demo
 
 <!-- Record it: see docs/README.md, then uncomment.
@@ -33,7 +63,7 @@ anywhere.
 ```console
 $ atlas
 atlas · life + habits + focus. Keeps you honest.
-      · qwen2.5:7b on remote GPU @ http://192.168.1.42:11434/v1 · 18 notes
+      · qwen2.5:7b on remote GPU @ http://your-gpu-host:11434/v1 · 18 notes
 
 [coach]> I'm behind on my C assignment and I keep avoiding it.
 
@@ -122,6 +152,51 @@ Same harness, same memory, saved sessions. Browser optional. On first launch
 Atlas finds your running Ollama, LM Studio, llama.cpp or vLLM server by itself
 — click ⚙ to switch runtimes and models without editing files.
 
+The interface is a quiet workspace: a compact sidebar with chats, Tools,
+Skills, Artifacts, Usage and Memory; a single rounded composer; custom
+keyboard-accessible controls for model, theme and profile. Cyan is reserved
+for active state, local model status and running tools. No native dropdowns,
+no dashboard clutter.
+
+Every non-chat view has a **← Chat** arrow and a `/view` path bar with a live
+status count (available tools, installed skills, artifacts, memories), so you
+can return to the conversation without reloading the page.
+
+Themes: Atlas (near-black + cyan), Midnight (pitch-black + deep blue),
+Mono (black + gray), Forest (black + muted green), Graphite (pure black +
+white) and Funky (near-black + soft violet). Preview one with
+`http://localhost:7777/?theme=graphite`. The custom accent row adds Cyan,
+Blue, Green, White or Violet on top of any theme.
+
+**Tools** shows what is genuinely available on this machine and clearly marks
+everything else as *not configured* — web search, filesystem, terminal, Git,
+image generation and MCP servers have UI surfaces ready, but are not
+implemented yet. **Artifacts** is an empty list with preview components ready
+for real files. **Usage** shows only real counts from the local API, with
+terminal-style text charts and an optional floating panel. **Memory** presents
+durable facts as plain statements grouped into About you / Preferences /
+Projects / Goals / Environment.
+
+The default theme is near-black with a small cyan accent. Settings offers
+Atlas (cyan), Midnight (deep blue), Mono (white/gray) and Forest (muted green),
+plus a custom accent. Themes change backgrounds, surfaces, borders and text,
+not just the accent color. Everything is stored in the browser's local
+storage — no account, no sync.
+
+---
+
+## Interface architecture
+
+```
+web/index.html      semantic shell, one inline SVG icon set
+web/style.css       design tokens, surfaces, components, responsive rules
+web/app.js          state, custom dropdowns, SSE streaming, views, memory UI
+```
+
+No framework, no build step, no bundled assets. The frontend speaks only to
+the existing `/api/*` routes; adding a real tool later means filling an
+already-designed card, not redesigning the shell.
+
 ```bash
 uv run python server.py     # http://localhost:7777
 atlas web                   # starts the server and opens it
@@ -141,6 +216,62 @@ sidebar.
 
 `⌘K` new chat · `↵` send · `⇧↵` newline · `esc` stop · double-click a title
 to rename.
+
+---
+
+## Working tools
+
+Three tools are live in chat and on the CLI. See **[docs/tools.md](docs/tools.md)** for the security model.
+
+| Tool | What it does | CLI |
+|---|---|---|
+| Web search | DuckDuckGo results, no key (Brave optional) | `atlas net search "query"` |
+| Web fetch | Readable text from a public page, with source URL | `atlas net fetch https://…` |
+| Files | Read / write / list / mkdir / move / delete in the workspace | `atlas fs read path` |
+| Terminal | Allowlisted `ls`, `git status`, `git log`, … | `atlas term ls` |
+| Git | Local status / diff / log | `atlas tools run git_status` |
+
+Network calls are pinned to public IPs with SSRF checks on every redirect. Filesystem access is confined to an explicit workspace; hidden files, keys, symlinks and path traversal are refused. Tool output is treated as untrusted data, never as instructions.
+
+```bash
+atlas tools                              # status of every tool
+atlas tools configure --workspace ~/dev/project
+atlas net search "Python lists tutorial" --limit 3
+atlas net fetch https://example.com
+atlas term git status --short
+atlas fm write notes/hello.txt --text hello
+atlas fs read notes/hello.txt
+uv run python -m unittest discover -s tests -v   # 52 offline tests
+```
+
+---
+
+## Local data vs the public repo
+
+This repository contains **only code, skills and docs**. Your memories, chats,
+artifacts, workspace path, `.env` and downloaded models stay in gitignored
+folders (`data/`, `notes/`, `.venv/`, `vendor/`). `context.py` reads that local
+state at runtime; no personal facts are written into source files — a test
+enforces this. Anyone can clone this repo, point Atlas at their own Ollama or
+LM Studio models, and get their own private agent.
+
+---
+
+## Agent runtime
+
+Atlas now runs a bounded agent loop: select a skill, call tools, inspect
+results, call more tools, answer. Skills are instruction files in
+`skills/<id>/SKILL.md`, loaded only when needed. Tools are declared in one
+registry that drives the model, CLI, API and GUI. Writes require an explicit
+Allow; DENY tools are never advertised. See **[docs/agent.md](docs/agent.md)**.
+
+```bash
+atlas tools                              # registry-driven tool list + permissions
+atlas tools permissions
+atlas skills list | show web-research
+atlas artifacts list
+atlas workspace                          # root, repo, branch, clean/dirty
+```
 
 ---
 
@@ -175,6 +306,48 @@ atlas remember "I am learning Rust."
 
 ---
 
+## Slash palette and goals
+
+Type `/` in the composer to see skills and commands. Pick a skill to load its
+instructions for that turn, or use `/goal <objective>` to give the agent a goal
+to work toward with real tools and bounded steps.
+
+```bash
+atlas goal set "inspect the repo and summarize the last commit"
+atlas goal status
+atlas goal clear
+```
+
+---
+
+## One agent, not modes
+
+Atlas has **one** mode: agent. Study, research, code and memory are skills the
+agent loads when needed, not separate personas. There is no mode switcher.
+
+```bash
+atlas                              # unified agent
+atlas study "explain derivatives"  # one-shot study session
+atlas agents roles                 # orchestrator roles
+atlas agents plan "study this function"
+atlas agents create WS ~/devAI/AtlasWSPC
+atlas agents run WS --port 7778    # isolated instance
+atlas agents list
+```
+
+Study writes comprehensive notes to the workspace, makes large summaries, and
+draws real function plots with `plot_function` (`x**2`, `sin(x)`, …) — all
+parsed safely, no code execution. See **[docs/agent.md](docs/agent.md)**.
+
+### Multiple instances
+
+Each instance gets its own workspace, SQLite data and notes folder, so you can
+run several Atlas processes for different projects without sharing memory.
+Set `ATLAS_DATA_DIR` / `ATLAS_WORKSPACE` for manual isolation; `atlas agents run`
+does both automatically.
+
+---
+
 ## Modes
 
 | Mode | Use it when |
@@ -205,7 +378,7 @@ Better answers, same memory:
 It prints one line for the client's `.env`:
 
 ```ini
-ATLAS_BASE_URL=http://192.168.1.42:11434/v1
+ATLAS_BASE_URL=http://your-gpu-host:11434/v1
 ATLAS_MODEL=qwen2.5:7b
 ```
 

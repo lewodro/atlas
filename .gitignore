@@ -16,3 +16,13 @@ notes/
 
 # macOS junk
 .DS_Store
+
+# local databases, logs and editor state
+*.db
+*.sqlite
+*.sqlite3
+*.log
+venv/
+.idea/
+.vscode/
+*.local

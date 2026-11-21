@@ -2,7 +2,7 @@
 # atlas — launcher (works from any folder, follows symlinks)
 #
 #   atlas                     chat (coach mode)
-#   atlas tutor               chat in a mode: coach|tutor|review|debug|plan
+#   atlas study               study session: notes, summaries, math
 #   atlas "question"          one-shot
 #   atlas today               what have I been doing?
 #   atlas scan                append an activity snapshot
@@ -30,12 +30,22 @@ case "${1:-}" in
   bench)  shift; exec uv run python bench.py "$@" ;;
   test)   shift; exec uv run python -m unittest discover -s tests "$@" ;;
   models) shift; exec uv run python models.py "$@" ;;
+  tools)  shift; exec uv run python tools_cli.py tools "$@" ;;
+  skills) shift; exec uv run python tools_cli.py skills "$@" ;;
+  artifacts) shift; exec uv run python tools_cli.py artifacts "$@" ;;
+  fm)     shift; exec uv run python tools_cli.py fm "$@" ;;
+  term)   shift; exec uv run python tools_cli.py term "$@" ;;
+  agents) shift; exec uv run python tools_cli.py agents "$@" ;;
+  goal)   shift; exec uv run python tools_cli.py goal "$@" ;;
+  workspace) shift; exec uv run python tools_cli.py workspace "$@" ;;
+  net)    shift; exec uv run python tools_cli.py net "$@" ;;
+  fs)     shift; exec uv run python tools_cli.py fs "$@" ;;
   user)   shift; exec uv run python memory_cli.py user "$@" ;;
   memory) shift; exec uv run python memory_cli.py memory "$@" ;;
   use)    shift; exec uv run python models.py --use "$@" ;;
   seed)   shift; exec uv run python seed.py "$@" ;;
   --once) shift; exec uv run python main.py --once "$@" ;;
-  coach|tutor|review|debug|plan) exec uv run python main.py --mode "$@" ;;
+  study)  shift; exec uv run python main.py --study "$@" ;;
   "")     exec uv run python main.py ;;
   *)      exec uv run python main.py --once "$@" ;;
 esac

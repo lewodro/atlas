@@ -3,110 +3,247 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>atlas</title>
+<title>Atlas</title>
+<link rel="icon" href="data:," />
 <link rel="stylesheet" href="/style.css" />
 </head>
-<body>
+<body data-view="chat">
+
+<!-- one icon set, one stroke language -->
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4 4"/></symbol>
+  <symbol id="i-tools" viewBox="0 0 24 24"><path d="M14.7 6.3a4.2 4.2 0 0 0-5.2 5.2L4.8 16.2a2 2 0 0 0 2.8 2.8l4.7-4.7a4.2 4.2 0 0 0 5.2-5.2l-2.6 2.6-2.6-.5-.5-2.6 2.9-2.3Z"/></symbol>
+  <symbol id="i-artifacts" viewBox="0 0 24 24"><path d="m12 3 8 4.3-8 4.3-8-4.3L12 3Z"/><path d="m4 12 8 4.3 8-4.3M4 16.5 12 21l8-4.5"/></symbol>
+  <symbol id="i-memory" viewBox="0 0 24 24"><path d="M9.5 5.5a3 3 0 0 0-4.2 4.2A3.4 3.4 0 0 0 6 16.3a3 3 0 0 0 4.6 2.5M14.5 5.5a3 3 0 0 1 4.2 4.2 3.4 3.4 0 0 1-.7 6.6 3 3 0 0 1-4.6 2.5"/><path d="M9.5 5.5h5M7.5 11h9M8.5 16h7"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.8"/><path d="M12 3.5v2M12 18.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3.5 12h2M18.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
+  <symbol id="i-attach" viewBox="0 0 24 24"><path d="M20 11.5 12.6 19a5 5 0 0 1-7.1-7.1l8-8a3.4 3.4 0 0 1 4.8 4.8l-8 8a1.8 1.8 0 0 1-2.5-2.5l7.3-7.3"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-4-4 4 4 4-4M4 18h16"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 5-5 3.5 3.5 2.5-2.5 4 4"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4M13.5 5l-3 14"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.8 12h16.4M12 3.5c2.4 2.3 3.6 5.2 3.6 8.5s-1.2 6.2-3.6 8.5c-2.4-2.3-3.6-5.2-3.6-8.5S9.6 5.8 12 3.5Z"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="12" r="2"/><path d="M7 8v8M9 6c4 0 6 2 6 4M9 18c4 0 6-2 6-4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-11Z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3ZM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M6.5 8h11v3a5.5 5.5 0 0 1-11 0V8ZM12 16.5V21"/></symbol>
+</svg>
+
 <div id="app">
 
   <aside id="sidebar">
-    <header class="side-head">
-      <span class="logo">atlas</span>
-      <button id="new-chat" title="new chat (⌘K)">+</button>
-    </header>
-
-    <input id="filter" placeholder="filter…" autocomplete="off" spellcheck="false" />
-
-    <nav id="sessions" aria-label="saved chats"></nav>
-
-    <footer class="side-foot">
-      <div class="profile-row">
-        <select id="profile" title="active profile"></select>
-        <button id="memories-btn" type="button" title="saved memories">mem</button>
+    <div class="side-top">
+      <div class="brand">
+        <span class="brand-name">ATLAS</span>
+        <button id="collapse" class="icon-btn" title="collapse sidebar"><svg><use href="#i-menu"/></svg></button>
       </div>
-      <div id="stats" class="stats"></div>
-      <div id="model" class="model"></div>
-    </footer>
+
+      <button id="new-chat" class="new-chat"><svg><use href="#i-plus"/></svg><span>New chat</span><kbd>⌘K</kbd></button>
+
+      <label class="search-field">
+        <svg><use href="#i-search"/></svg>
+        <input id="filter" placeholder="Search chats" autocomplete="off" spellcheck="false" />
+      </label>
+    </div>
+
+    <nav class="primary-nav" aria-label="workspace">
+      <button class="nav-item" data-view="tools"><svg><use href="#i-tools"/></svg><span>Tools</span><em id="tools-badge">6</em></button>
+      <button class="nav-item" data-view="skills"><svg><use href="#i-spark"/></svg><span>Skills</span></button>
+      <button class="nav-item" data-view="artifacts"><svg><use href="#i-artifacts"/></svg><span>Artifacts</span></button>
+      <button class="nav-item" data-view="usage"><svg><use href="#i-pulse"/></svg><span>Usage</span></button>
+      <button class="nav-item" data-view="memory"><svg><use href="#i-memory"/></svg><span>Memory</span></button>
+    </nav>
+
+    <div class="chats-block">
+      <div class="section-label">Chats</div>
+      <div id="sessions" aria-label="saved chats"></div>
+    </div>
+
+    <div class="side-foot">
+      <div class="runtime-line"><span class="live-dot"></span><span id="runtime-label">Local runtime</span></div>
+      <button class="nav-item" id="settings"><svg><use href="#i-settings"/></svg><span>Settings</span></button>
+
+      <div class="select profile-select" id="profile-select">
+        <button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false">
+          <span class="avatar" id="profile-avatar">A</span>
+          <span class="select-value">Personal</span>
+          <svg class="chev"><use href="#i-chevron"/></svg>
+        </button>
+        <div class="select-menu up" role="listbox" hidden></div>
+      </div>
+    </div>
   </aside>
 
   <main id="main">
-    <header class="top">
-      <button id="menu" class="menu" title="chats">≡</button>
-      <h1 id="title">new chat</h1>
-      <span id="mode-chip" class="chip">coach</span>
-      <span class="spacer"></span>
-      <select id="mode" title="mode"></select>
-      <select id="model-pick" title="model"></select>
-      <button id="settings" type="button" title="endpoint &amp; model">⚙</button>
-      <span id="status" class="status"></span>
+    <header class="topbar">
+      <button id="menu" class="icon-btn mobile-only" title="chats"><svg><use href="#i-menu"/></svg></button>
+      <h1 id="title">New chat</h1>
+
+      <div class="top-actions">
+        <div class="activity" title="Inference location"><svg><use href="#i-pulse"/></svg><span id="activity-label">Local</span></div>
+
+        <div class="select theme-select" id="theme-select">
+          <button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false" title="Theme">
+            <span class="select-value">Atlas</span><svg class="chev"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="select-menu" role="listbox" hidden></div>
+        </div>
+
+        <button class="icon-btn" id="usage-toggle" title="Usage panel"><svg><use href="#i-pulse"/></svg></button>
+
+        <div class="select model-select" id="model-select">
+          <button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false">
+            <span class="model-dot"></span>
+            <span class="select-value">Model</span>
+            <svg class="chev"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="select-menu wide" role="listbox" hidden></div>
+        </div>
+
+        <button class="icon-btn" id="header-settings" title="Settings"><svg><use href="#i-settings"/></svg></button>
+      </div>
     </header>
 
-    <section id="messages" aria-live="polite"></section>
+    <section id="chat-view" class="view">
+      <div id="messages" aria-live="polite"></div>
 
-    <form id="composer" autocomplete="off">
-      <textarea id="input" rows="1" placeholder="message atlas…  ⏎ send · ⇧⏎ newline" spellcheck="false"></textarea>
-      <button id="send" type="submit" title="send">↑</button>
-      <button id="stop" type="button" title="stop" hidden>■</button>
-    </form>
+      <div class="composer-wrap">
+        <div id="slash-menu" class="slash-menu" hidden></div>
+        <form id="composer" autocomplete="off">
+          <button type="button" id="attach" class="composer-icon" title="Attachments — coming soon" disabled><svg><use href="#i-attach"/></svg></button>
+          <button type="button" id="composer-tools" class="composer-icon" title="Tools"><svg><use href="#i-tools"/></svg></button>
+          <textarea id="input" rows="1" placeholder="Message Atlas…" spellcheck="false"></textarea>
+          <button id="send" type="submit" class="send-btn" title="Send"><svg><use href="#i-send"/></svg></button>
+          <button id="stop" type="button" class="stop-btn" title="Stop" hidden><svg><use href="#i-stop"/></svg></button>
+        </form>
+        <div class="composer-hint"><span>Enter to send</span><span>Shift + Enter for a new line</span></div>
+      </div>
+    </section>
+
+    <section id="workspace-view" class="view" hidden>
+      <div class="view-bar">
+        <button id="view-back" type="button" title="Back to chat">
+          <svg><use href="#i-chevron"/></svg><span>Chat</span>
+        </button>
+        <span class="view-path">/<span id="view-path-name">tools</span></span>
+        <span class="view-status" id="view-status"></span>
+      </div>
+      <div class="workspace-head">
+        <div>
+          <h2 id="workspace-title">Tools</h2>
+          <p id="workspace-subtitle">Capabilities available to Atlas on this machine.</p>
+        </div>
+        <div id="workspace-actions"></div>
+      </div>
+      <div id="memory-controls" hidden>
+        <div class="memory-tools">
+          <div class="select" id="mem-filter-select">
+            <button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="select-value">All categories</span><svg class="chev"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="select-menu" role="listbox" hidden></div>
+          </div>
+          <input id="mem-filter" placeholder="Filter memories" spellcheck="false" />
+        </div>
+        <div class="memory-add">
+          <div class="select" id="mem-add-select">
+            <button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="select-value">Temporary</span><svg class="chev"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="select-menu" role="listbox" hidden></div>
+          </div>
+          <input id="mem-add-text" placeholder="Remember something durable…" spellcheck="false" />
+          <button type="button" id="mem-add-btn" class="text-btn">Add memory</button>
+        </div>
+      </div>
+      <div id="workspace-body"></div>
+    </section>
   </main>
+</div>
 
+<div id="usage-panel" class="usage-panel right" hidden>
+  <div class="up-head">
+    <span>Usage</span>
+    <span class="up-actions">
+      <button id="usage-dock" class="icon-btn" title="Change panel position"><svg><use href="#i-artifacts"/></svg></button>
+      <button id="usage-close" class="icon-btn" title="Close"><svg><use href="#i-close"/></svg></button>
+    </span>
+  </div>
+  <div id="usage-panel-body"></div>
 </div>
 
 <dialog id="configure">
-  <form id="config-form">
-    <h2>your model</h2>
-    <p class="hint">Any OpenAI-compatible server: Ollama, LM Studio, llama.cpp,
-      vLLM, OpenRouter, or a GPU box on your LAN. Saved to data/settings.json.</p>
+  <div class="settings-shell">
+    <aside class="settings-tabs">
+      <button type="button" data-tab="appearance" class="active">Appearance</button>
+      <button type="button" data-tab="models">Models</button>
+      <button type="button" data-tab="tools">Tools</button>
+      <button type="button" data-tab="memory">Memory</button>
+    </aside>
 
-    <div id="cfg-runtimes" class="runtimes"></div>
+    <form id="config-form" class="settings-main">
+      <div class="dialog-head">
+        <div><h2>Settings</h2><p>Atlas stays local. Changes are saved on this machine.</p></div>
+        <button type="button" class="icon-btn" id="cfg-cancel"><svg><use href="#i-close"/></svg></button>
+      </div>
 
-    <label>endpoint
-      <input id="cfg-url" placeholder="http://127.0.0.1:11434/v1" spellcheck="false" />
-    </label>
-    <label>api key <span class="opt">optional for local servers</span>
-      <input id="cfg-key" type="password" placeholder="sk-…" spellcheck="false" />
-    </label>
-    <label>model
-      <input id="cfg-model" list="cfg-models" placeholder="qwen2.5:3b" spellcheck="false" />
-      <datalist id="cfg-models"></datalist>
-    </label>
+      <section class="settings-panel" data-panel="appearance">
+        <div class="field-label">Theme</div>
+        <div id="theme-choices" class="theme-choices"></div>
 
-    <label>download <span class="opt">Ollama only</span>
-      <span class="row">
-        <input id="cfg-pull" placeholder="qwen2.5:7b" spellcheck="false" />
-        <button type="button" id="cfg-pull-btn">pull</button>
-      </span>
-    </label>
+        <div class="field-label spaced">Accent</div>
+        <div id="accent-choices" class="accent-choices"></div>
+        <p class="status-line">Accent overrides the theme accent until you choose another theme.</p>
+      </section>
 
-    <p class="hint" id="cfg-status"></p>
-    <menu>
-      <button type="button" id="cfg-cancel">cancel</button>
-      <button type="submit" id="cfg-save">save</button>
-    </menu>
-  </form>
+      <section class="settings-panel" data-panel="models" hidden>
+        <div class="field-label">Detected runtimes</div>
+        <div id="cfg-runtimes" class="runtimes"></div>
+
+        <label class="field"><span class="field-label">Endpoint</span>
+          <input id="cfg-url" placeholder="http://127.0.0.1:11434/v1" spellcheck="false" />
+        </label>
+        <label class="field"><span class="field-label">API key <em>optional for local servers</em></span>
+          <input id="cfg-key" type="password" placeholder="sk-…" spellcheck="false" />
+        </label>
+        <label class="field"><span class="field-label">Model</span>
+          <input id="cfg-model" placeholder="qwen2.5:3b" spellcheck="false" />
+        </label>
+
+        <div class="pull-row">
+          <input id="cfg-pull" placeholder="Download a model with Ollama, e.g. qwen2.5:7b" spellcheck="false" />
+          <button type="button" id="cfg-pull-btn">Pull</button>
+        </div>
+        <p class="status-line" id="cfg-status"></p>
+      </section>
+
+      <section class="settings-panel" data-panel="tools" hidden>
+        <p class="panel-copy">Tools are capabilities Atlas can use. Most are UI-ready but not implemented yet.</p>
+        <div id="settings-tools" class="settings-list"></div>
+      </section>
+
+      <section class="settings-panel" data-panel="memory" hidden>
+        <p class="panel-copy">Memory holds durable context about you. Review, add, correct or forget facts in the Memory page.</p>
+        <button type="button" id="settings-open-memory" class="text-btn">Open Memory</button>
+      </section>
+
+      <menu>
+        <button type="button" id="cfg-dismiss">Close</button>
+        <button type="submit" id="cfg-save">Save model settings</button>
+      </menu>
+    </form>
+  </div>
 </dialog>
 
-<dialog id="memories">
-  <form id="memory-form">
-    <h2>saved memories</h2>
-    <p class="hint" id="mem-profile"></p>
-    <div class="row">
-      <input id="mem-search" placeholder="filter…" spellcheck="false" />
-      <select id="mem-category"></select>
-    </div>
-    <div id="mem-list"></div>
-    <div class="row">
-      <select id="mem-add-cat"></select>
-      <input id="mem-add-text" placeholder="remember that…" spellcheck="false" />
-      <button type="submit">add</button>
-    </div>
-    <p class="hint" id="mem-status"></p>
-    <menu>
-      <button type="button" id="mem-export">export</button>
-      <button type="button" id="mem-close">close</button>
-    </menu>
-  </form>
-</dialog>
 <script src="/app.js"></script>
 </body>
 </html>

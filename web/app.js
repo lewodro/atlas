@@ -1,76 +1,90 @@
-/* atlas web — vanilla js, no build step. */
+/* Atlas UI — vanilla JS. No build step, no framework, no fake data. */
 
 const $ = (s) => document.querySelector(s);
+const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
+
+const saved = (key, fallback) => {
+  try { return localStorage.getItem(`atlas.${key}`) ?? fallback; } catch { return fallback; }
+};
+const rememberLocal = (key, value) => {
+  try { localStorage.setItem(`atlas.${key}`, String(value)); } catch { /* private mode */ }
+};
 
 const state = {
   sessions: [],
   current: null,
-  mode: "coach",
+  mode: "agent",
   modes: [],
   models: [],
+  runtimes: [],
   defaultModel: "",
   baseUrl: "",
+  modelChoice: "",
+  profileId: "default",
+  profileName: "Personal",
   sending: false,
   controller: null,
   filter: "",
-  profiles: [],
   memories: [],
   categories: [],
+  view: "chat",
+  stats: null,
+  theme: "atlas",
+  accent: "",
+  usageOpen: false,
+  usagePos: "right",
+  tools: [],
+  skills: [],
+  artifacts: [],
+  workspace: null,
+  toolActivity: [],
 };
 
-let lifecycleTimer = null;
-
-function lifecycleHeartbeat() {
+/* lifecycle lease (the server stops itself when the last tab closes) */
+let lease = null;
+function heartbeat() {
   fetch("/api/lifecycle", { method: "POST", keepalive: true }).catch(() => {});
 }
-
-function startLifecycle() {
-  if (lifecycleTimer) clearInterval(lifecycleTimer);
-  lifecycleHeartbeat();
-  lifecycleTimer = setInterval(lifecycleHeartbeat, 3000);
+function startLease() {
+  if (lease) clearInterval(lease);
+  heartbeat();
+  lease = setInterval(heartbeat, 3000);
 }
-
 window.addEventListener("pagehide", () => {
-  if (lifecycleTimer) {
-    clearInterval(lifecycleTimer);
-    lifecycleTimer = null;
-  }
-  navigator.sendBeacon("/api/lifecycle/close", new Blob(["{}"], {
-    type: "application/json",
-  }));
+  if (lease) { clearInterval(lease); lease = null; }
+  navigator.sendBeacon("/api/lifecycle/close", new Blob(["{}"], { type: "application/json" }));
 });
-
-// Safari and Firefox may restore the page from back/forward cache without
-// running boot() again. Reclaim the server lease when that happens.
-window.addEventListener("pageshow", (event) => {
-  if (event.persisted) startLifecycle();
-});
+window.addEventListener("pageshow", (e) => { if (e.persisted) startLease(); });
 
 /* ---------------------------------------------------------------- utils */
 
-const esc = (s) =>
-  s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function md(text) {
-  const parts = esc(text).split(/```/);
-  return parts
-    .map((part, i) => {
-      if (i % 2) return `<pre><code>${part.replace(/^[a-z]*\n/, "")}</code></pre>`;
-      return part
-        .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-        .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-    })
-    .join("");
+  return esc(text).split(/```/).map((part, i) => {
+    if (i % 2) return `<pre><code>${part.replace(/^[a-z]*\n/, "")}</code></pre>`;
+    return part
+      .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  }).join("");
 }
 
-const ago = (iso) => {
-  const then = new Date(iso.replace(" ", "T") + "Z").getTime();
+function ago(iso) {
+  const then = new Date(String(iso).replace(" ", "T") + "Z").getTime();
   const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
   if (mins < 1) return "now";
   if (mins < 60) return `${mins}m`;
   if (mins < 1440) return `${Math.round(mins / 60)}h`;
   return `${Math.round(mins / 1440)}d`;
-};
+}
+
+function friendlyModel(id) {
+  if (!id) return "Default model";
+  let name = id.split("/").pop().replace(/[-_:]/g, " ");
+  name = name.replace(/(\d+(?:\.\d+)?)b\b/gi, "$1B");
+  return name.replace(/\s+/g, " ").trim().replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -82,206 +96,368 @@ async function api(path, opts = {}) {
   return data;
 }
 
-/* ---------------------------------------------------------------- render */
+/* ----------------------------------------------------- custom dropdown */
+
+function makeSelect(root, config = {}) {
+  const trigger = root.querySelector(".select-trigger");
+  const valueEl = root.querySelector(".select-value");
+  const menu = root.querySelector(".select-menu");
+  let options = [];
+  let value = config.value ?? "";
+
+  function labelFor(v) {
+    return options.find((o) => o.value === v)?.label || config.placeholder || "Select";
+  }
+
+  function paint() {
+    menu.innerHTML = options.map((o, i) => `
+      <button type="button" role="option" aria-selected="${o.value === value}"
+              class="select-option ${o.value === value ? "selected" : ""}" data-i="${i}">
+        <span class="tick">${icon("check")}</span>
+        <span class="o-label">${esc(o.label)}</span>
+        ${o.meta ? `<span class="o-meta">${esc(o.meta)}</span>` : ""}
+      </button>`).join("");
+    menu.querySelectorAll(".select-option").forEach((item) => {
+      item.onclick = () => choose(options[Number(item.dataset.i)].value);
+    });
+  }
+
+  function open() {
+    paint();
+    menu.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    (menu.querySelector(".selected") || menu.querySelector(".select-option"))?.focus();
+  }
+  function close() {
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+  }
+  function choose(next) {
+    value = next;
+    valueEl.textContent = labelFor(next);
+    close();
+    trigger.focus();
+    paint();
+    config.onChange?.(next);
+  }
+
+  trigger.onclick = () => (menu.hidden ? open() : close());
+  trigger.onkeydown = (e) => {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault(); open();
+    }
+  };
+  menu.onkeydown = (e) => {
+    const items = [...menu.querySelectorAll(".select-option")];
+    const at = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); items[(at + 1) % items.length]?.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(at - 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); trigger.focus(); }
+  };
+  document.addEventListener("click", (e) => {
+    if (!root.contains(e.target)) close();
+  });
+
+  return {
+    setOptions(list, keep = true) {
+      options = list;
+      if (!keep || !options.some((o) => o.value === value)) value = list[0]?.value ?? "";
+      valueEl.textContent = labelFor(value);
+      paint();
+    },
+    setValue(next) { value = next; valueEl.textContent = labelFor(next); paint(); },
+    get value() { return value; },
+    open,
+    close,
+  };
+}
+
+/* ---------------------------------------------------------- navigation */
+
+const selects = {};
+
+function setView(name) {
+  state.view = name;
+  $("#chat-view").hidden = name !== "chat";
+  $("#workspace-view").hidden = name === "chat";
+  document.body.dataset.view = name;
+
+  document.querySelectorAll(".primary-nav .nav-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.view === name);
+  });
+
+  const titles = {
+    tools: ["Tools", "Capabilities available to Atlas on this machine."],
+    skills: ["Skills", "Instruction workflows Atlas loads only when needed."],
+    artifacts: ["Artifacts", "Files and outputs Atlas creates or works on."],
+    memory: ["Memory", "What Atlas remembers about you, in plain language."],
+    usage: ["Usage", "What Atlas has actually done on this machine."],
+  };
+  if (titles[name]) {
+    $("#workspace-title").textContent = titles[name][0];
+    $("#workspace-subtitle").textContent = titles[name][1];
+  }
+  $("#view-path-name").textContent = name;
+  $("#view-status").textContent = viewStatus(name);
+  $("#memory-controls").hidden = name !== "memory";
+  $("#workspace-actions").innerHTML = name === "memory"
+    ? `<button class="text-btn" id="mem-export">${icon("download")} Export</button>` : "";
+  if (name === "memory") $("#mem-export").onclick = exportMemories;
+
+  if (name === "tools") renderTools();
+  if (name === "skills") renderSkills();
+  if (name === "artifacts") renderArtifacts();
+  if (name === "memory") refreshMemories();
+  if (name === "usage") renderUsage();
+  $("#sidebar").classList.remove("open");
+}
+
+function viewStatus(name) {
+  if (name === "tools") {
+    const n = state.tools.filter((t) => t.available).length;
+    return `${n}/${state.tools.length} available`;
+  }
+  if (name === "skills") {
+    const n = state.skills.filter((s) => s.enabled).length;
+    return `${n} installed`;
+  }
+  if (name === "artifacts") return `${state.artifacts.length} files`;
+  if (name === "usage") return "local only";
+  if (name === "memory") return `${state.memories.length} facts`;
+  return "";
+}
+
+$("#view-back").onclick = () => setView("chat");
+
+document.querySelectorAll(".primary-nav .nav-item").forEach((item) => {
+  item.onclick = () => setView(item.dataset.view);
+});
+$("#composer-tools").onclick = () => setView("tools");
+$("#settings").onclick = () => openSettings();
+$("#header-settings").onclick = () => openSettings();
+$("#menu").onclick = () => $("#sidebar").classList.toggle("open");
+$("#collapse").onclick = () => {
+  if (innerWidth <= 760) $("#sidebar").classList.toggle("open");
+  else $("#app").classList.toggle("collapsed");
+};
+
+/* ---------------------------------------------------------------- chat */
 
 function renderSessions() {
-  const nav = $("#sessions");
+  const box = $("#sessions");
   const q = state.filter.toLowerCase();
-  const list = state.sessions.filter(
-    (s) => !q || s.title.toLowerCase().includes(q) || s.mode.includes(q),
-  );
+  const list = state.sessions.filter((s) =>
+    !q || s.title.toLowerCase().includes(q) || s.mode.includes(q));
 
-  nav.innerHTML = "";
+  box.innerHTML = "";
   if (!list.length) {
-    nav.innerHTML = `<div class="empty" style="padding:8px 4px">no chats${q ? " match" : " yet"}</div>`;
+    box.innerHTML = `<div class="empty-note">No chats${q ? " match your search" : " yet"}.</div>`;
     return;
   }
-
   for (const s of list) {
-    const el = document.createElement("div");
-    el.className = "chat" + (s.id === state.current ? " active" : "");
-    el.innerHTML = `
-      <div class="name">${esc(s.title)}</div>
-      <button class="kill" title="delete">✕</button>
-      <div class="meta">${s.mode} · ${s.turns} msg · ${ago(s.updated)}</div>`;
-    el.onclick = (e) => {
-      if (e.target.classList.contains("kill")) return;
-      openSession(s.id);
-      $("#sidebar").classList.remove("open");
-    };
-    el.querySelector(".name").ondblclick = () => renameSession(s);
-    el.querySelector(".kill").onclick = (e) => {
-      e.stopPropagation();
-      removeSession(s);
-    };
-    nav.appendChild(el);
+    const row = document.createElement("div");
+    row.className = "chat-row" + (s.id === state.current ? " active" : "");
+    row.innerHTML = `
+      <span class="name">${esc(s.title)}</span>
+      <span class="meta">${ago(s.updated)}</span>
+      <button class="kill" title="Delete chat">${icon("close")}</button>`;
+    row.onclick = () => { openSession(s.id); $("#sidebar").classList.remove("open"); };
+    row.querySelector(".name").ondblclick = () => renameSession(s);
+    row.querySelector(".kill").onclick = (e) => { e.stopPropagation(); removeSession(s); };
+    box.appendChild(row);
   }
 }
 
-async function refreshProfiles() {
-  const data = await api("/api/profiles");
-  state.profiles = data.profiles;
-  const select = $("#profile");
-  select.innerHTML = state.profiles
-    .map((p) => `<option value="${esc(p.id)}" ${p.active ? "selected" : ""}>${esc(p.name)}</option>`)
-    .join("");
+function welcome() {
+  const name = state.profileName.split(" ")[0] || "there";
+  return `<div class="welcome">
+    <h2>Hello, ${esc(name)}</h2>
+    <p>What are we working on?</p>
+    <div class="suggestions">
+      <button class="suggestion" data-prompt="Help me plan the next step on a project">${icon("folder")}Work on a project</button>
+      <button class="suggestion" data-prompt="Quiz me on a topic I am studying">${icon("spark")}Study something</button>
+      <button class="suggestion" data-prompt="Inspect the repository I have been working in">${icon("git")}Inspect a repository</button>
+      <button class="suggestion" data-prompt="What do you remember about me?">${icon("memory")}Recall my memory</button>
+    </div>
+  </div>`;
 }
 
-async function refreshMemories() {
-  const category = $("#mem-category").value;
-  const data = await api("/api/memories" + (category ? `?category=${encodeURIComponent(category)}` : ""));
-  state.memories = data.memories;
-  state.categories = data.categories;
-  $("#mem-profile").textContent = `profile ${data.profile} · ${data.memories.length} stored facts`;
-  const options = () => `<option value="">all</option>` +
-    state.categories.map((c) => `<option ${c === category ? "selected" : ""}>${c}</option>`).join("");
-  $("#mem-category").innerHTML = options();
-  $("#mem-add-cat").innerHTML = state.categories
-    .map((c) => `<option ${c === "temporary" ? "selected" : ""}>${c}</option>`).join("");
-  renderMemoryList();
-}
-
-function renderMemoryList() {
-  const q = $("#mem-search").value.toLowerCase();
-  const list = state.memories.filter((m) => !q || m.content.toLowerCase().includes(q));
-  $("#mem-list").innerHTML = list.map((m) => `
-    <div class="memory">
-      <span class="tag">${esc(m.category)}</span>
-      <span class="text">${esc(m.content)}</span>
-      <button type="button" class="kill" data-id="${m.id}" title="forget">✕</button>
-    </div>`).join("") || `<p class="hint">nothing saved yet</p>`;
-  $("#mem-list").querySelectorAll(".kill").forEach((button) => {
-    button.onclick = async () => {
-      await api(`/api/memories/${button.dataset.id}`, { method: "DELETE" });
-      await refreshMemories();
-      await refreshStats();
+function paintWelcome() {
+  const box = $("#messages");
+  if (box.querySelector(".msg")) return;
+  box.innerHTML = welcome();
+  box.querySelectorAll(".suggestion").forEach((card) => {
+    card.onclick = () => {
+      $("#input").value = card.dataset.prompt;
+      $("#input").focus();
+      $("#input").dispatchEvent(new Event("input"));
     };
   });
 }
 
-function renderStats(data) {
-  $("#stats").innerHTML = `
-    <span>notes <b>${data.notes}</b></span>
-    <span>chats <b>${data.sessions}</b></span>
-    <span>turns <b>${data.turns}</b></span>
-    <span>${data.frontier ? "frontier on" : "local only"}</span>`;
-  $("#model").textContent = `${data.model} · ${data.where}`;
-  state.modes = data.modes || [];
-  const select = $("#mode");
-  select.innerHTML = state.modes
-    .map((m) => `<option ${m === state.mode ? "selected" : ""}>${m}</option>`)
-    .join("");
-}
-
 function bubble(role, text = "") {
+  boxlessRemoveWelcome();
   const holder = document.createElement("article");
   holder.className = `msg ${role}`;
-  holder.innerHTML = `<div class="who">${role === "user" ? "you" : "atlas"}</div>
-                      <div class="body"></div>`;
-  const body = holder.querySelector(".body");
-  body.innerHTML = md(text);
+  holder.innerHTML = `<div class="who">${role === "user" ? "You" : "Atlas"}</div><div class="body"></div>`;
+  holder.querySelector(".body").innerHTML = md(text);
   $("#messages").appendChild(holder);
   scrollDown();
-  return { holder, body, text };
+  return { holder, body: holder.querySelector(".body"), text };
 }
+function boxlessRemoveWelcome() { $("#messages .welcome")?.remove(); }
+
+const TOOL_LABELS = {
+  remember: "Saved a memory",
+  search_notes: "Searched memories",
+  recent_activity: "Checked recent activity",
+  forget_memory: "Forgot a memory",
+  list_memories: "Listed memories",
+  update_memory: "Updated a memory",
+};
 
 function toolLine(name, result) {
-  const el = document.createElement("div");
-  el.className = "tool";
-  el.innerHTML = `<b>${esc(name)}</b> → ${esc(result)}`;
+  const el = document.createElement("details");
+  el.className = "tool-call";
+  el.innerHTML = `
+    <summary><span class="pulse"></span><span>${esc(TOOL_LABELS_EXTRA[name] || TOOL_LABELS[name] || `Used ${name}`)}</span>${icon("chevron")}</summary>
+    <pre>${esc(result)}</pre>`;
+  $("#messages").appendChild(el);
+  scrollDown();
+}
+
+const CATEGORY_LABELS = {
+  identity: "Identity", education: "Education", preferences: "Preferences",
+  learning: "Learning", communication: "Communication", projects: "Projects",
+  "last-seat": "Last Seat", atlas: "Atlas", tennis: "Tennis", goals: "Goals",
+};
+
+const TOOL_LABELS_EXTRA = {
+  web_search: "Searched the web",
+  web_fetch: "Fetched a page",
+  filesystem: "Used the workspace",
+  git_status: "Checked Git status",
+  git_diff: "Read the diff",
+  git_log: "Read commit history",
+  terminal: "Ran a terminal command",
+  files: "Managed workspace files",
+};
+function memoryLine(payload) {
+  const el = document.createElement("details");
+  el.className = "memory-hint";
+  const items = (payload.categories || []).map((c) =>
+    `<li>${esc(CATEGORY_LABELS[c] || c)}</li>`).join("");
+  el.innerHTML = `<summary>${icon("memory")} Used ${payload.count} ${payload.count === 1 ? "memory" : "memories"}</summary><ul>${items}</ul>`;
   $("#messages").appendChild(el);
   scrollDown();
 }
 
 function scrollDown() {
   const box = $("#messages");
-  const near = box.scrollHeight - box.scrollTop - box.clientHeight < 200;
-  if (near || state.sending) box.scrollTop = box.scrollHeight;
+  if (box.scrollHeight - box.scrollTop - box.clientHeight < 220 || state.sending) {
+    box.scrollTop = box.scrollHeight;
+  }
 }
 
-/* ---------------------------------------------------------------- actions */
-
 async function refreshSessions() {
-  const { sessions } = await api("/api/sessions");
-  state.sessions = sessions;
+  state.sessions = (await api("/api/sessions")).sessions;
   renderSessions();
+  if (state.view === "usage") renderUsage();
+  if (state.usageOpen) renderUsagePanel();
 }
 
 async function refreshStats() {
-  renderStats(await api("/api/stats"));
+  const data = await api("/api/stats");
+  state.stats = data;
+  state.modes = data.modes || [];
+  $("#activity-label").textContent = data.frontier ? "Frontier" : "Local";
+  $("#runtime-label").textContent = data.where ? data.where.split(" @ ")[0] : "Local runtime";
+  renderUsagePanel();
+  if (state.view === "usage") renderUsage();
+  return data;
 }
 
-function renderModels(info) {
-  state.models = info.models || [];
-  state.defaultModel = info.model || "";
-  state.baseUrl = info.base_url || "";
+async function refreshRuntimes() {
+  try {
+    state.runtimes = (await api("/api/runtimes")).runtimes || [];
+  } catch { state.runtimes = []; }
+  if (state.view === "tools") renderTools();
+  renderModelOptions();
+}
 
-  const select = $("#model-pick");
-  const chosen = select.value;
-  select.innerHTML =
-    `<option value="">default · ${esc(state.defaultModel)}</option>` +
-    state.models.map((m) => `<option>${esc(m)}</option>`).join("");
-  if (state.models.includes(chosen)) select.value = chosen;
-
-  const list = $("#cfg-models");
-  if (list) list.innerHTML = state.models.map((m) => `<option>${esc(m)}</option>`).join("");
+function renderModelOptions() {
+  const options = [
+    { value: "", label: `Default · ${friendlyModel(state.defaultModel)}`, meta: "profile default" },
+    ...state.models.map((m) => {
+      const runtime = state.runtimes.find((r) => r.models?.includes(m));
+      return { value: m, label: friendlyModel(m), meta: runtime ? `${runtime.name} · local` : "openai compatible" };
+    }),
+  ];
+  selects.model?.setOptions(options);
+  selects.model?.setValue(state.modelChoice);
 }
 
 async function refreshModels() {
-  renderModels(await api("/api/models"));
+  const info = await api("/api/models");
+  state.models = info.models || [];
+  state.defaultModel = info.model || "";
+  state.baseUrl = info.base_url || "";
+  renderModelOptions();
+  return info;
+}
+
+async function refreshProfiles() {
+  const data = await api("/api/profiles");
+  state.profiles = data.profiles;
+  state.profileId = data.active;
+  const active = data.profiles.find((p) => p.id === data.active);
+  state.profileName = active?.name || "Personal";
+  selects.profile?.setOptions(data.profiles.map((p) => ({
+    value: p.id,
+    label: p.name,
+    meta: p.active ? "active" : `${p.memories} memories`,
+  })));
+  selects.profile?.setValue(data.active);
+  $("#profile-avatar").textContent = (state.profileName[0] || "P").toUpperCase();
 }
 
 async function newChat() {
   const { id } = await api("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ mode: state.mode, model: $("#model-pick").value || undefined }),
+    body: JSON.stringify({ mode: state.mode, model: state.modelChoice || undefined }),
   });
   await refreshSessions();
   await openSession(id);
-  $("#input").focus();
 }
 
 async function openSession(id) {
   const { session, messages } = await api(`/api/sessions/${id}`);
   state.current = id;
   state.mode = session.mode;
-  $("#title").textContent = session.title;
-  $("#mode-chip").textContent = session.mode;
-  $("#mode").value = session.mode;
-  $("#model-pick").value = session.model || "";
+  state.modelChoice = session.model || "";
+  $("#title").textContent = session.title || "New chat";
+  selects.model?.setValue(state.modelChoice);
 
   const box = $("#messages");
   box.innerHTML = "";
-  if (!messages.length) {
-    box.innerHTML = `<div class="empty">
-      Ask anything. It remembers across chats.<br>
-      <kbd>enter</kbd> send · <kbd>shift</kbd>+<kbd>enter</kbd> newline · <kbd>⌘K</kbd> new chat
-    </div>`;
-  }
-  for (const m of messages) bubble(m.role, m.content);
+  if (messages.length) messages.forEach((m) => bubble(m.role, m.content));
+  else paintWelcome();
   renderSessions();
   $("#input").focus();
 }
 
 async function renameSession(s) {
-  const title = prompt("rename chat", s.title);
+  const title = prompt("Rename chat", s.title);
   if (!title || title === s.title) return;
-  await api(`/api/sessions/${s.id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ title }),
-  });
+  await api(`/api/sessions/${s.id}`, { method: "PATCH", body: JSON.stringify({ title }) });
   await refreshSessions();
   if (s.id === state.current) $("#title").textContent = title;
 }
 
 async function removeSession(s) {
-  if (!confirm(`delete "${s.title}"? this cannot be undone.`)) return;
-  try {
-    await api(`/api/sessions/${s.id}`, { method: "DELETE" });
-  } catch (e) {
-    alert(e.message);
-    return;
-  }
+  if (!confirm(`Delete "${s.title}"? This cannot be undone.`)) return;
+  try { await api(`/api/sessions/${s.id}`, { method: "DELETE" }); }
+  catch (e) { alert(e.message); return; }
   await refreshSessions();
   await refreshStats();
   if (s.id === state.current) {
@@ -291,61 +467,7 @@ async function removeSession(s) {
   }
 }
 
-/* ---------------------------------------------------------------- memories */
-
-const memDlg = $("#memories");
-
-$("#memories-btn").onclick = async () => {
-  $("#mem-search").value = "";
-  await refreshMemories();
-  memDlg.showModal();
-  $("#mem-add-text").focus();
-};
-
-$("#mem-close").onclick = () => memDlg.close();
-$("#mem-search").oninput = renderMemoryList;
-$("#mem-category").onchange = refreshMemories;
-
-$("#memory-form").onsubmit = async (e) => {
-  e.preventDefault();
-  const text = $("#mem-add-text").value.trim();
-  if (!text) return;
-  try {
-    const result = await api("/api/memories", {
-      method: "POST",
-      body: JSON.stringify({
-        category: $("#mem-add-cat").value,
-        content: text,
-        confidence: 0.8,
-      }),
-    });
-    $("#mem-status").textContent = `${result.status} memory ${result.id}`;
-    $("#mem-add-text").value = "";
-    await refreshMemories();
-    await refreshStats();
-  } catch (err) {
-    $("#mem-status").textContent = err.message;
-  }
-};
-
-$("#mem-export").onclick = async () => {
-  const data = await api("/api/memories/export");
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `atlas-memories-${$("#profile").value}.json`;
-  link.click();
-};
-
-$("#profile").onchange = async (e) => {
-  await api("/api/profiles", {
-    method: "POST",
-    body: JSON.stringify({ action: "switch", id: e.target.value }),
-  });
-  location.reload();
-};
-
-/* ---------------------------------------------------------------- streaming */
+/* ------------------------------------------------------------- sending */
 
 async function send(text) {
   if (state.sending) return;
@@ -354,42 +476,29 @@ async function send(text) {
   state.sending = true;
   $("#stop").hidden = false;
   $("#send").hidden = true;
-  $("#status").textContent = "thinking";
-  $("#status").classList.add("live");
-  document.querySelector(".empty")?.remove();
-
   bubble("user", text);
   const reply = bubble("assistant", "");
   reply.body.classList.add("caret");
 
   state.controller = new AbortController();
-
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: state.current,
-        message: text,
-        mode: state.mode,
-      }),
+      body: JSON.stringify({ session_id: state.current, message: text, mode: state.mode }),
       signal: state.controller.signal,
     });
-
     if (!res.ok || !res.body) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `http ${res.status}`);
     }
-
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-
       let cut;
       while ((cut = buffer.indexOf("\n\n")) >= 0) {
         const block = buffer.slice(0, cut);
@@ -407,57 +516,767 @@ async function send(text) {
     state.controller = null;
     $("#stop").hidden = true;
     $("#send").hidden = false;
-    $("#status").textContent = "";
-    $("#status").classList.remove("live");
     await refreshSessions();
     await refreshStats();
   }
 }
 
 function parseEvent(block) {
-  let name = "message";
-  let data = "";
+  let name = "message", data = "";
   for (const line of block.split("\n")) {
     if (line.startsWith("event:")) name = line.slice(6).trim();
     else if (line.startsWith("data:")) data += line.slice(5).trim();
   }
   if (!data) return null;
-  try {
-    return { name, data: JSON.parse(data) };
-  } catch {
-    return null;
+  try { return { name, data: JSON.parse(data) }; } catch { return null; }
+}
+
+function skillLine(name) {
+  const el = document.createElement("div");
+  el.className = "tool";
+  el.innerHTML = `${icon("spark")} <b>${esc(name)}</b> skill loaded`;
+  $("#messages").appendChild(el);
+  scrollDown();
+}
+
+function goalLine(payload) {
+  let el = document.querySelector(".goal-line");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "goal-line";
+    $("#messages").appendChild(el);
   }
+  const label = payload.status === "done" ? "GOAL COMPLETE"
+    : payload.step ? `step: ${payload.step}` : "goal set";
+  el.innerHTML = `${icon("spark")} <b>${esc(payload.text)}</b> · ${esc(label)}`;
+  scrollDown();
+}
+
+function permissionLine(payload) {
+  const el = document.createElement("div");
+  el.className = "permission-card";
+  el.innerHTML = `
+    <div><b>${esc(payload.tool)}</b> wants permission</div>
+    <code>${esc(payload.preview || "")}</code>
+    <div class="permission-actions">
+      <button type="button" data-allow="true">Allow</button>
+      <button type="button" data-allow="false">Deny</button>
+    </div>`;
+  el.querySelectorAll("button").forEach((button) => {
+    button.onclick = async () => {
+      await api("/api/tools/permission", {
+        method: "POST",
+        body: JSON.stringify({ token: payload.token, allow: button.dataset.allow === "true" }),
+      });
+      el.remove();
+    };
+  });
+  $("#messages").appendChild(el);
+  scrollDown();
 }
 
 function handleEvent(block, reply) {
-  const parsed = parseEvent(block);
-  if (!parsed) return;
-  const event = parsed.name;
-  const payload = parsed.data;
-
-  if (event === "delta") {
-    reply.text += payload.text;
+  const event = parseEvent(block);
+  if (!event) return;
+  const { name, data } = event;
+  if (name === "delta") {
+    reply.text += data.text;
     reply.body.innerHTML = md(reply.text);
     scrollDown();
-  } else if (event === "tool") {
-    toolLine(payload.name, payload.result);
-  } else if (event === "memory") {
-    const line = document.createElement("div");
-    line.className = "tool";
-    line.innerHTML = `<b>used ${payload.count}</b> saved memories · ${esc(payload.categories.join(", "))}`;
-    $("#messages").appendChild(line);
-  } else if (event === "error") {
-    reply.body.innerHTML = `<span style="color:var(--danger)">${esc(payload.message)}</span>`;
-  } else if (event === "done") {
-    reply.text = payload.text;
-    reply.body.innerHTML = md(reply.text);
-    $("#title").textContent = $("#title").textContent === "new chat"
-      ? payload.text.slice(0, 60)
-      : $("#title").textContent;
+  } else if (name === "tool") {
+    toolLine(data.name, data.result);
+  } else if (name === "memory") {
+    memoryLine(data);
+  } else if (name === "error") {
+    reply.body.innerHTML = `<span style="color:var(--danger)">${esc(data.message)}</span>`;
+  } else if (name === "skill") {
+    skillLine(data.name);
+  } else if (name === "goal") {
+    goalLine(data);
+  } else if (name === "artifact") {
+    const card = document.createElement("div");
+    card.innerHTML = artifactCard(data);
+    const holder = card.firstElementChild;
+    holder.onclick = () => { setView("artifacts"); renderArtifactPreview(data); };
+    $("#messages").appendChild(holder);
+    scrollDown();
+  } else if (name === "permission") {
+    permissionLine(data);
+  } else if (name === "done") {
+    reply.text = data.text;
+    reply.body.innerHTML = md(data.text);
+    if ($("#title").textContent === "New chat") $("#title").textContent = data.text.slice(0, 54);
   }
 }
 
-/* ---------------------------------------------------------------- events */
+/* ------------------------------------------------------------- memory */
+
+const GROUPS = {
+  "About you": ["identity", "education"],
+  "Preferences": ["preferences", "communication", "learning"],
+  "Projects": ["projects", "last-seat", "atlas", "games-renderer", "audio"],
+  "Goals": ["goals", "ambitions", "decisions"],
+  "Environment": ["temporary", "health", "programming", "dev-interests", "tennis", "tennis-goals", "memory-rules"],
+};
+
+async function refreshMemories() {
+  const filter = selects.memCategory?.value || "";
+  const data = await api("/api/memories" + (filter ? `?category=${encodeURIComponent(filter)}` : ""));
+  state.memories = data.memories;
+  state.categories = data.categories;
+  selects.memCategory?.setOptions([
+    { value: "", label: "All categories" },
+    ...data.categories.map((c) => ({ value: c, label: c })),
+  ]);
+  selects.memCategory?.setValue(filter);
+  selects.memAddCategory?.setOptions(data.categories.map((c) => ({ value: c, label: c })));
+  selects.memAddCategory?.setValue("temporary");
+  renderMemoryGroups();
+  $("#view-status").textContent = viewStatus(state.view);
+}
+
+function renderMemoryGroups() {
+  const q = ($("#mem-filter")?.value || "").toLowerCase();
+  const items = state.memories.filter((m) => !q || m.content.toLowerCase().includes(q));
+  const grouped = new Map();
+  items.forEach((m) => {
+    const section = Object.keys(GROUPS).find((key) => GROUPS[key].includes(m.category)) || "Other";
+    if (!grouped.has(section)) grouped.set(section, []);
+    grouped.get(section).push(m);
+  });
+  const host = $("#workspace-body");
+  if (!items.length) {
+    host.innerHTML = `<div class="empty-state">${icon("memory")}<strong>No memories here yet</strong><span>Tell Atlas something durable and it will appear here in plain language.</span></div>`;
+    return;
+  }
+  host.innerHTML = `<div class="memory-groups">${[...grouped].map(([section, rows]) => `
+    <section class="memory-group">
+      <h3>${esc(section)}</h3>
+      ${rows.map((m) => `<div class="memory-item">
+        <span class="text">${esc(m.content)}</span>
+        <time>${esc((m.updated || "").slice(0, 10))}</time>
+        <button data-id="${m.id}" title="Forget">${icon("close")}</button>
+      </div>`).join("")}
+    </section>`).join("")}</div>`;
+
+  host.querySelectorAll(".memory-item button").forEach((button) => {
+    button.onclick = async () => {
+      if (!confirm("Forget this memory?")) return;
+      await api(`/api/memories/${button.dataset.id}`, { method: "DELETE" });
+      await refreshMemories();
+      await refreshStats();
+    };
+  });
+}
+
+async function exportMemories() {
+  const data = await api("/api/memories/export");
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `atlas-memories-${state.profileId}.json`;
+  link.click();
+}
+
+/* --------------------------------------------------------------- tools */
+
+const FUTURE_TOOLS = [
+  { icon: "terminal", name: "Terminal", desc: "Sandboxed shell. Not implemented." },
+  { icon: "git", name: "GitHub", desc: "Remote issues and pull requests. Local Git is already available." },
+  { icon: "image", name: "Image generation", desc: "Create and edit images locally. Not implemented." },
+  { icon: "code", name: "Code execution", desc: "Run generated code in a sandbox. Not implemented." },
+  { icon: "database", name: "Last Seat MCP", desc: "Project tool server. Not implemented." },
+  { icon: "plug", name: "Other MCP servers", desc: "Register external providers. Not implemented." },
+];
+
+const CATEGORY_ICON = {
+  web: "globe", filesystem: "folder", git: "git", terminal: "terminal",
+  skills: "spark", memory: "memory", general: "plug",
+};
+
+async function refreshTools() {
+  try {
+    state.tools = (await api("/api/tools")).tools || [];
+  } catch { state.tools = []; }
+  try {
+    state.workspace = await api("/api/workspace");
+  } catch { state.workspace = null; }
+  try {
+    state.toolActivity = (await api("/api/tools/activity")).activity || [];
+  } catch { state.toolActivity = []; }
+  if (state.view === "tools") renderTools();
+  if (state.view === "usage") renderUsage();
+  $("#view-status").textContent = viewStatus(state.view);
+}
+
+async function configureTool(name) {
+  if (name === "files") {
+    const current = state.workspace?.root || "";
+    const path = prompt("Workspace folder Atlas may read and edit", current);
+    if (!path) return;
+    try {
+      await api("/api/tools/config", {
+        method: "POST", body: JSON.stringify({ workspace: path }),
+      });
+      await refreshTools();
+    } catch (err) { alert(err.message); }
+    return;
+  }
+  openSettings().then(() => selectSettingsTab("tools"));
+}
+
+function toolCard(t) {
+  const configurable = ["files", "web_search", "web_fetch"].includes(t.id);
+  return `<article class="card">
+    <div class="card-head">${icon(CATEGORY_ICON[t.category] || "plug")}<h3>${esc(t.id)}</h3></div>
+    <p>${esc(t.description)}</p>
+    <span class="pill ${t.available ? "" : "quiet"}">${t.available ? "Available" : "Not configured"}</span>
+    <span class="pill quiet">${esc(t.permission)}</span>
+    <div class="card-foot"><button class="text-btn" data-configure="${esc(t.id)}" ${configurable ? "" : "disabled"}>
+      ${configurable ? "Configure" : "In use"}</button></div>
+  </article>`;
+}
+
+function renderTools() {
+  $("#tools-badge").textContent = String(state.tools.filter((t) => t.available).length);
+  const ws = state.workspace || {};
+  $("#workspace-body").innerHTML = `
+    <div class="group-label">Available on this machine</div>
+    <div class="card-grid">${state.tools.map(toolCard).join("")}</div>
+    <div class="group-label">Workspace</div>
+    <div class="card">
+      <div class="card-head">${icon("folder")}<h3>${esc(ws.repo || (ws.configured ? "Folder workspace" : "No workspace"))}</h3></div>
+      <p>${esc(ws.root || ws.error || "Configure a workspace to enable filesystem and Git tools.")}</p>
+      <span class="pill ${ws.is_git ? "" : "quiet"}">${ws.is_git
+        ? `${esc(ws.branch || "detached")} · ${ws.dirty ? "dirty" : "clean"} · ${ws.changed} changed`
+        : "not a Git repository"}</span>
+    </div>
+    <div class="group-label">Coming next — not implemented</div>
+    <div class="card-grid">${FUTURE_TOOLS.map((t) => `
+      <article class="card">
+        <div class="card-head">${icon(t.icon)}<h3>${esc(t.name)}</h3></div>
+        <p>${esc(t.desc)}</p><span class="pill quiet">Not configured</span>
+      </article>`).join("")}</div>`;
+
+  $("#workspace-body").querySelectorAll("[data-configure]").forEach((button) => {
+    if (button.dataset.configure) button.onclick = () => configureTool(button.dataset.configure);
+  });
+}
+
+/* -------------------------------------------------------------- skills */
+
+async function refreshSkills() {
+  try {
+    state.skills = (await api("/api/skills")).skills || [];
+  } catch { state.skills = []; }
+  if (state.view === "skills") renderSkills();
+  $("#view-status").textContent = viewStatus(state.view);
+}
+
+function renderSkills() {
+  $("#workspace-body").innerHTML = state.skills.length ? `
+    <div class="card-grid">${state.skills.map((s) => `
+      <article class="card">
+        <div class="card-head">${icon("spark")}<h3>${esc(s.name)}</h3></div>
+        <p>${esc(s.description)}</p>
+        <div class="settings-list">${s.tags.map((tag) => `<span>${esc(tag)}</span>`).join("")}</div>
+        <div class="card-foot"><button class="text-btn" data-skill="${esc(s.id)}">View instructions</button></div>
+      </article>`).join("")}</div>` : `
+    <div class="empty-state">${icon("spark")}<strong>No skills installed</strong><span>Add skills in skills/&lt;id&gt;/SKILL.md.</span></div>`;
+
+  $("#workspace-body").querySelectorAll("[data-skill]").forEach((button) => {
+    button.onclick = async () => {
+      const data = await api(`/api/skills/${encodeURIComponent(button.dataset.skill)}`);
+      const skill = data.skill;
+      $("#workspace-body").innerHTML = `<article class="card">
+        <div class="card-head">${icon("spark")}<h3>${esc(skill.name)}</h3></div>
+        <p>${esc(skill.description)}</p>
+        <div class="settings-list">${(skill.tools || []).map((t) => `<span class="on">${esc(t)}</span>`).join("")}</div>
+        <pre class="skill-body">${esc(skill.body)}</pre>
+        <div class="card-foot"><button class="text-btn" id="skill-back">Back</button></div>
+      </article>`;
+      $("#skill-back").onclick = renderSkills;
+    };
+  });
+}
+
+/* ----------------------------------------------------------- artifacts */
+
+function artifactIcon(kind) {
+  if (kind === "image") return "image";
+  if (["code", "markdown", "text", "json", "patch"].includes(kind)) return "code";
+  return "file";
+}
+
+function artifactCard(a) {
+  return `<div class="artifact-card">${icon(artifactIcon(a.kind))}
+    <span class="a-name">${esc(a.title || a.name)}</span>
+    <span class="pill">${esc(a.kind || a.type)}</span>
+    <button class="text-btn" data-artifact="${esc(a.id)}">Open</button></div>`;
+}
+
+async function refreshArtifacts() {
+  try {
+    state.artifacts = (await api("/api/artifacts")).artifacts || [];
+  } catch { state.artifacts = []; }
+  if (state.view === "artifacts") renderArtifacts();
+  $("#view-status").textContent = viewStatus(state.view);
+}
+
+function renderArtifactList(items) {
+  $("#workspace-body").innerHTML = `<div class="artifact-list">${items.map((a) => `
+    <div class="artifact-row" data-artifact="${esc(a.id)}">
+      ${icon(artifactIcon(a.kind))}
+      <span class="a-name">${esc(a.title)}</span>
+      <span class="a-meta">${esc(a.kind)}</span>
+      <span class="a-meta">${new Date(a.created * 1000).toLocaleDateString()}</span>
+    </div>`).join("")}</div>`;
+  $("#workspace-body").querySelectorAll("[data-artifact]").forEach((row) => {
+    row.onclick = () => {
+      const item = items.find((a) => a.id === row.dataset.artifact);
+      if (item) renderArtifactPreview(item);
+    };
+  });
+}
+
+function renderArtifactPreview(a) {
+  const media = a.kind === "image" && a.path
+    ? `<img class="artifact-image" src="/api/artifacts/${encodeURIComponent(a.id)}/content" alt="${esc(a.title)}" />`
+    : `<pre>${esc(a.preview || "(no text preview)")}</pre>`;
+  $("#workspace-body").innerHTML = `<div class="artifact-preview">
+    <div class="card-head">${icon(artifactIcon(a.kind))}<h3>${esc(a.title)}</h3></div>
+    <p class="unavailable">${esc(a.kind)} · ${esc(a.path || "stored locally")}</p>
+    ${media}
+    <div class="card-foot"><button class="text-btn" id="artifact-back">Back</button></div>
+  </div>`;
+  $("#artifact-back").onclick = renderArtifacts;
+}
+
+function renderArtifacts() {
+  if (!state.artifacts.length) {
+    $("#workspace-body").innerHTML = `<div class="empty-state">${icon("artifacts")}
+      <strong>No artifacts yet</strong>
+      <span>Files Atlas creates or works on will appear here with a preview.</span>
+    </div>`;
+    return;
+  }
+  renderArtifactList(state.artifacts);
+}
+
+/* ------------------------------------------------------- theme + usage */
+
+const THEMES = [
+  { id: "atlas", label: "Atlas", note: "near-black · cyan" },
+  { id: "midnight", label: "Midnight", note: "pitch black · deep blue" },
+  { id: "mono", label: "Mono", note: "black · white/gray" },
+  { id: "forest", label: "Forest", note: "black · muted green" },
+  { id: "graphite", label: "Graphite", note: "pure black · white" },
+  { id: "funky", label: "Funky", note: "near-black · soft violet" },
+];
+
+const ACCENTS = [
+  { label: "Cyan", value: "#22d3a6" },
+  { label: "Blue", value: "#5b8cff" },
+  { label: "Green", value: "#5fbf87" },
+  { label: "White", value: "#e8e8e8" },
+  { label: "Violet", value: "#b18cff" },
+];
+
+function paintThemeChoices() {
+  $("#theme-choices").innerHTML = THEMES.map((t) => `
+    <button type="button" class="theme-card ${t.id === state.theme ? "active" : ""}" data-theme="${t.id}">
+      <span class="preview"></span><span><b>${esc(t.label)}</b><br><small>${esc(t.note)}</small></span>
+    </button>`).join("");
+  $("#theme-choices").querySelectorAll("button").forEach((button) => {
+    button.onclick = () => applyTheme(button.dataset.theme, "");
+  });
+
+  $("#accent-choices").innerHTML = ACCENTS.map((a) => `
+    <button type="button" class="accent-dot ${a.value === state.accent ? "active" : ""}"
+            data-accent="${a.value}" style="--dot:${a.value}"><i></i>${esc(a.label)}</button>`).join("");
+  $("#accent-choices").querySelectorAll("button").forEach((button) => {
+    button.onclick = () => applyTheme(state.theme, button.dataset.accent);
+  });
+}
+
+function applyTheme(id, accent = "") {
+  state.theme = id;
+  state.accent = accent;
+  document.documentElement.dataset.theme = id;
+  if (accent) document.documentElement.style.setProperty("--accent", accent);
+  else document.documentElement.style.removeProperty("--accent");
+  rememberLocal("theme", id);
+  rememberLocal("accent", accent);
+  selects.theme?.setValue(id);
+  paintThemeChoices();
+}
+
+/* usage is derived only from real API data */
+const BLOCKS = "▁▂▃▄▅▆▇█";
+function sparkline(values) {
+  const peak = Math.max(1, ...values);
+  return values.map((v) => BLOCKS[Math.round((v / peak) * (BLOCKS.length - 1))]).join("");
+}
+function miniRow(label, count, peak) {
+  const width = 11;
+  const filled = Math.round((count / Math.max(1, peak)) * width);
+  return `<div class="mini-row"><span class="label">${esc(label)}</span>
+    <span class="track"><b>${"█".repeat(filled)}</b>${"░".repeat(width - filled)}</span>
+    <span class="count">${count}</span></div>`;
+}
+
+async function usageFacts() {
+  const stats = state.stats || await api("/api/stats");
+  const sessions = state.sessions.length ? state.sessions : (await api("/api/sessions")).sessions;
+  const memories = state.memories.length ? state.memories : (await api("/api/memories")).memories;
+  return { stats, sessions, memories };
+}
+
+function usageSummary(facts) {
+  const { stats, sessions, memories } = facts;
+  return [
+    ["Model", friendlyModel(stats.model || state.defaultModel)],
+    ["Runtime", stats.where || "not detected"],
+    ["Chats", String(sessions.length)],
+    ["Turns", String(stats.turns ?? "—")],
+    ["Memories", String(memories.length)],
+  ];
+}
+
+function toolActivityRows() {
+  const rows = state.toolActivity || [];
+  if (!rows.length) return '<p class="unavailable">no tool calls recorded yet</p>';
+  const counts = {};
+  let failed = 0;
+  rows.forEach((r) => {
+    counts[r.tool] = (counts[r.tool] || 0) + 1;
+    if (!r.ok) failed += 1;
+  });
+  const peak = Math.max(1, ...Object.values(counts));
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])
+    .map(([name, n]) => miniRow(name, n, peak)).join("")
+    + `<p class="unavailable">${rows.length} calls · ${failed} failed · durations recorded</p>`;
+}
+
+async function renderUsage() {
+  const facts = await usageFacts();
+  const { sessions, memories } = facts;
+
+  const days = Array(7).fill(0);
+  sessions.forEach((row) => {
+    const then = new Date(String(row.updated).replace(" ", "T") + "Z").getTime();
+    const index = 6 - Math.floor((Date.now() - then) / 86400000);
+    if (index >= 0 && index < 7) days[index] += 1;
+  });
+
+  const byModel = {};
+  sessions.forEach((row) => {
+    const key = row.model || state.defaultModel || "default";
+    byModel[key] = (byModel[key] || 0) + 1;
+  });
+  const byCategory = {};
+  memories.forEach((row) => {
+    byCategory[row.category] = (byCategory[row.category] || 0) + 1;
+  });
+
+  const modelPeak = Math.max(1, ...Object.values(byModel));
+  const catPeak = Math.max(1, ...Object.values(byCategory));
+
+  $("#workspace-body").innerHTML = `
+    <div class="usage-grid">
+      <section class="usage-card">
+        <h3>At a glance</h3>
+        ${usageSummary(facts).map(([k, v]) => `<div class="up-row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("")}
+      </section>
+      <section class="usage-card">
+        <h3>Chats by day</h3>
+        <div class="spark">${sparkline(days)}</div>
+        <p class="unavailable">last 7 days · by chat, not tokens</p>
+        <h3 style="margin-top:18px">Model usage</h3>
+        ${Object.entries(byModel).sort((a, b) => b[1] - a[1]).slice(0, 6)
+          .map(([m, n]) => miniRow(friendlyModel(m), n, modelPeak)).join("") || '<p class="unavailable">no chats yet</p>'}
+      </section>
+      <section class="usage-card">
+        <h3>Memory categories</h3>
+        ${Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 7)
+          .map(([c, n]) => miniRow(c, n, catPeak)).join("") || '<p class="unavailable">no memories yet</p>'}
+      </section>
+      <section class="usage-card">
+        <h3>Tool activity</h3>
+        ${toolActivityRows(facts)}
+        <h3 style="margin-top:18px">Not instrumented</h3>
+        <p class="unavailable">Tokens, tokens/s, prompt tokens, session duration, tool calls and generated artifacts are not exposed by the current runtime. No numbers are guessed.</p>
+      </section>
+    </div>`;
+}
+
+function renderUsagePanel() {
+  const panel = $("#usage-panel");
+  if (!state.stats || !panel) return;
+  panel.className = `usage-panel ${state.usagePos}`;
+  panel.hidden = !state.usageOpen;
+  const rows = usageSummary({
+    stats: state.stats,
+    sessions: state.sessions,
+    memories: state.memories,
+  });
+  $("#usage-panel-body").innerHTML = rows.map(([k, v], i) => `
+    <div class="up-row"><span>${esc(k)}</span><span class="${i === 0 ? "accent" : ""}">${esc(v)}</span></div>`).join("");
+}
+
+function toggleUsagePanel(force) {
+  state.usageOpen = force ?? !state.usageOpen;
+  rememberLocal("usageOpen", state.usageOpen);
+  renderUsagePanel();
+  if (state.usageOpen) refreshMemories().then(renderUsagePanel).catch(() => {});
+  if (new URLSearchParams(location.search).has("slash")) {
+    const input = $("#input");
+    input.value = "/";
+    input.dispatchEvent(new Event("input"));
+  }
+}
+
+function cycleUsageDock() {
+  const order = ["right", "bottom-right", "docked"];
+  state.usagePos = order[(order.indexOf(state.usagePos) + 1) % order.length];
+  rememberLocal("usagePos", state.usagePos);
+  renderUsagePanel();
+}
+
+/* ------------------------------------------------------------- settings */
+
+const dlg = $("#configure");
+let runtimeCache = { at: 0, list: [] };
+
+function fsAvailable() {
+  return state.tools.find((t) => t.id === "files")?.available || false;
+}
+function fsNote() {
+  const fs = state.tools.find((t) => t.id === "files");
+  return fs?.workspace || fs?.error || "no workspace configured";
+}
+
+function selectSettingsTab(name) {
+  document.querySelectorAll(".settings-tabs button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".settings-panel").forEach((p) =>
+    p.hidden = p.dataset.panel !== name);
+  $("#cfg-save").hidden = name !== "models";
+}
+
+document.querySelectorAll(".settings-tabs button").forEach((button) => {
+  button.onclick = () => {
+    selectSettingsTab(button.dataset.tab);
+    if (button.dataset.tab === "tools") {
+      $("#settings-tools").innerHTML = state.tools.map((row) =>
+        `<span class="${row.available ? "on" : ""}">${esc(row.id)} · ${esc(row.permission)}</span>`
+      ).join("");
+    }
+  };
+});
+
+$("#settings-open-memory").onclick = () => { dlg.close(); setView("memory"); };
+$("#usage-toggle").onclick = () => toggleUsagePanel();
+$("#usage-close").onclick = () => toggleUsagePanel(false);
+$("#usage-dock").onclick = cycleUsageDock;
+
+async function renderRuntimes() {
+  if (Date.now() - runtimeCache.at > 30000 || !runtimeCache.list.length) {
+    runtimeCache = { at: Date.now(), list: (await api("/api/runtimes")).runtimes };
+    state.runtimes = runtimeCache.list;
+  }
+  $("#cfg-runtimes").innerHTML = runtimeCache.list.map((r, i) => `
+    <button type="button" class="runtime ${r.ok ? "" : "off"} ${r.active ? "active" : ""}" data-runtime="${i}">
+      <b>${esc(r.name)}</b><small>${r.ok ? `${r.models.length} models` : "offline"}</small>
+    </button>`).join("");
+  $("#cfg-runtimes").querySelectorAll("button").forEach((button) => {
+    button.onclick = async () => {
+      const r = runtimeCache.list[Number(button.dataset.runtime)];
+      const status = $("#cfg-status");
+      status.textContent = `Connecting to ${r.name}…`;
+      try {
+        const info = await api(`/api/models?base_url=${encodeURIComponent(r.base_url)}`);
+        $("#cfg-url").value = r.base_url;
+        $("#cfg-key").value = "";
+        $("#cfg-model").value = info.models[0] || "";
+        status.textContent = r.ok
+          ? `${r.name}: ${info.models.length} models available — save to connect`
+          : `${r.name} is not running on ${r.base_url}`;
+      } catch (err) { status.textContent = err.message; }
+    };
+  });
+}
+
+async function openSettings() {
+  selectSettingsTab("appearance");
+  const info = await api("/api/models");
+  $("#cfg-url").value = info.base_url || "";
+  $("#cfg-model").value = info.model || "";
+  $("#cfg-key").value = "";
+  $("#cfg-status").textContent = info.reachable
+    ? `${info.models.length} models found` : "No local model server detected";
+  await renderRuntimes();
+  dlg.showModal();
+}
+
+$("#cfg-cancel").onclick = () => dlg.close();
+$("#cfg-dismiss").onclick = () => dlg.close();
+
+$("#cfg-pull-btn").onclick = async () => {
+  const name = $("#cfg-pull").value.trim();
+  if (!name) return;
+  const status = $("#cfg-status"), button = $("#cfg-pull-btn");
+  button.disabled = true;
+  status.textContent = `Pulling ${name}…`;
+  try {
+    const res = await fetch("/api/models/pull", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: name }),
+    });
+    if (!res.ok || !res.body) throw new Error(`http ${res.status}`);
+    const reader = res.body.getReader(), decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const event = parseEvent(buffer.slice(0, cut));
+        buffer = buffer.slice(cut + 2);
+        if (!event) continue;
+        if (event.name === "pull") {
+          const d = event.data;
+          status.textContent = `${d.status}${d.total ? ` ${Math.round(100 * d.completed / d.total)}%` : ""}`;
+        } else if (event.name === "error") status.textContent = event.data.message;
+        else if (event.name === "done") {
+          status.textContent = `${event.data.model} installed`;
+          $("#cfg-model").value = event.data.model;
+          await refreshModels();
+          runtimeCache.at = 0;
+        }
+      }
+    }
+  } catch (err) { status.textContent = err.message; }
+  finally { button.disabled = false; }
+};
+
+$("#config-form").onsubmit = async (e) => {
+  e.preventDefault();
+  $("#cfg-status").textContent = "Saving…";
+  try {
+    await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        base_url: $("#cfg-url").value.trim(),
+        api_key: $("#cfg-key").value.trim(),
+        model: $("#cfg-model").value.trim(),
+      }),
+    });
+    await refreshModels();
+    await refreshStats();
+    runtimeCache.at = 0;
+    await refreshRuntimes();
+    dlg.close();
+  } catch (err) { $("#cfg-status").textContent = err.message; }
+};
+
+/* --------------------------------------------------------- slash palette */
+
+const SLASH_ACTIONS = [
+  { id: "goal", label: "Goal", desc: "Set an objective for the agent to work toward", icon: "spark" },
+  { id: "skills", label: "Skills", desc: "Open the skills workspace", icon: "spark" },
+  { id: "tools", label: "Tools", desc: "Open the tools workspace", icon: "tools" },
+  { id: "memory", label: "Memory", desc: "Open saved memories", icon: "memory" },
+  { id: "usage", label: "Usage", desc: "Open local usage", icon: "pulse" },
+];
+
+let slashItems = [];
+let slashIndex = 0;
+
+function slashEntries() {
+  // Installed skills come straight from /api/skills (skills.list_skills), so
+  // this reflects what the active profile actually has on disk.
+  const skills = state.skills.map((s) => ({
+    id: s.id,
+    label: s.name || s.id,
+    desc: s.description || "",
+    icon: "spark",
+    prefix: "/skill:",
+    group: "skill",
+    enabled: s.enabled !== false,
+  }));
+  const actions = SLASH_ACTIONS.map((a) => ({ ...a, prefix: "/", group: "action", enabled: true }));
+  return [...skills, ...actions];
+}
+
+function renderSlash(query) {
+  const all = slashEntries();
+  const raw = query.toLowerCase().replace(/^\//, "");
+  // "/skill" should reveal the installed skills themselves, not just the
+  // "Skills" workspace action that happens to share the word. "/skill:foo"
+  // narrows those skills by id, name, or description.
+  const skillMode = raw === "skill" || raw.startsWith("skill:");
+  const term = skillMode ? raw.replace(/^skill:/, "") : raw;
+  slashItems = all
+    .filter((item) => {
+      if (skillMode && item.group !== "skill") return false;
+      return !term
+        || item.id.toLowerCase().includes(term)
+        || item.label.toLowerCase().includes(term)
+        || (item.group === "skill" && item.desc.toLowerCase().includes(term));
+    })
+    .sort((a, b) => {
+      if (a.group !== b.group) return a.group === "skill" ? -1 : 1;
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      return 0;
+    })
+    .slice(0, 8);
+  slashIndex = 0;
+  const menu = $("#slash-menu");
+  if (!slashItems.length) { menu.hidden = true; menu.innerHTML = ""; return; }
+  menu.hidden = false;
+  paintSlash(true);
+}
+
+function paintSlash(animate = false) {
+  const menu = $("#slash-menu");
+  menu.classList.toggle("slash-animate", animate);
+  menu.innerHTML = slashItems.map((item, i) => {
+    const suffix = item.group === "skill" && !item.enabled ? " · disabled" : "";
+    return `
+    <button type="button" class="slash-item ${i === slashIndex ? "active" : ""}" data-i="${i}">
+      ${icon(item.icon)}
+      <span class="s-label">${esc(item.prefix + item.id)}</span>
+      <span class="s-desc">${esc(item.desc + suffix)}</span>
+    </button>`;
+  }).join("");
+  menu.querySelectorAll("button").forEach((button) => {
+    button.onclick = () => chooseSlash(Number(button.dataset.i));
+  });
+}
+
+function chooseSlash(index) {
+  const item = slashItems[index];
+  if (!item) return;
+  const input = $("#input");
+  if (item.prefix === "/skill:") {
+    input.value = `/skill:${item.id} `;
+  } else if (item.id === "goal") {
+    input.value = "/goal ";
+  } else {
+    input.value = "";
+    setView(item.id);
+  }
+  $("#slash-menu").hidden = true;
+  input.focus();
+  input.dispatchEvent(new Event("input"));
+}
+
+function closeSlash() { $("#slash-menu").hidden = true; }
+
+/* --------------------------------------------------------------- events */
 
 $("#composer").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -470,189 +1289,139 @@ $("#composer").addEventListener("submit", async (e) => {
 });
 
 $("#input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    $("#composer").requestSubmit();
+  const menu = $("#slash-menu");
+  if (!menu.hidden && slashItems.length) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      slashIndex = (slashIndex + 1) % slashItems.length;
+      paintSlash();
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      slashIndex = (slashIndex - 1 + slashItems.length) % slashItems.length;
+      paintSlash();
+      return;
+    }
+    if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+      e.preventDefault();
+      chooseSlash(slashIndex);
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeSlash();
+      return;
+    }
   }
-  if (e.key === "Escape" && state.sending) {
-    state.controller?.abort();
-  }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#composer").requestSubmit(); }
+  if (e.key === "Escape" && state.sending) state.controller?.abort();
 });
-
 $("#input").addEventListener("input", (e) => {
   e.target.style.height = "auto";
   e.target.style.height = Math.min(e.target.scrollHeight, innerHeight * 0.4) + "px";
+  const value = e.target.value.trimStart();
+  if (value.startsWith("/") && !value.includes(" ")) renderSlash(value);
+  else closeSlash();
 });
-
-$("#new-chat").onclick = newChat;
-$("#menu").onclick = () => $("#sidebar").classList.toggle("open");
-
-$("#filter").oninput = (e) => {
-  state.filter = e.target.value;
-  renderSessions();
-};
-
-$("#mode").onchange = async (e) => {
-  state.mode = e.target.value;
-  $("#mode-chip").textContent = state.mode;
-  if (state.current) {
-    await api(`/api/sessions/${state.current}`, {
-      method: "PATCH",
-      body: JSON.stringify({ mode: state.mode }),
-    });
-    await refreshSessions();
-  }
-};
-
-$("#model-pick").onchange = async (e) => {
-  const model = e.target.value || "";
-  if (!state.current) return;
-  await api(`/api/sessions/${state.current}`, {
-    method: "PATCH",
-    body: JSON.stringify({ model }),
-  });
-  await refreshSessions();
-};
-
-/* ---------------------------------------------------------------- settings */
-
-const dlg = $("#configure");
-let runtimeCache = { at: 0, list: [] };
-
-async function renderRuntimes() {
-  if (Date.now() - runtimeCache.at > 30000 || !runtimeCache.list.length) {
-    runtimeCache = { at: Date.now(), list: (await api("/api/runtimes")).runtimes };
-  }
-  $("#cfg-runtimes").innerHTML = runtimeCache.list.map((r, i) => `
-    <button type="button" class="runtime ${r.ok ? "" : "off"} ${r.active ? "active" : ""}"
-            data-runtime="${i}" title="${esc(r.base_url)}">
-      <b>${esc(r.name)}</b><small>${r.ok ? r.models.length + " models" : "offline"}</small>
-    </button>`).join("");
-
-  $("#cfg-runtimes").querySelectorAll("button").forEach((button) => {
-    button.onclick = async () => {
-      const r = runtimeCache.list[Number(button.dataset.runtime)];
-      const status = $("#cfg-status");
-      status.textContent = `connecting to ${r.name}…`;
-      try {
-        const info = await api(`/api/models?base_url=${encodeURIComponent(r.base_url)}`);
-        $("#cfg-url").value = r.base_url;
-        $("#cfg-key").value = "";
-        $("#cfg-models").innerHTML = info.models
-          .map((m) => `<option>${esc(m)}</option>`).join("");
-        if (info.models.length) $("#cfg-model").value = info.models[0];
-        status.textContent = r.ok
-          ? `${r.name}: ${info.models.length} available — pick one and save`
-          : `${r.name} is not running on ${r.base_url}`;
-      } catch (err) {
-        status.textContent = err.message;
-      }
-    };
-  });
-}
-
-$("#settings").onclick = async () => {
-  const info = await api("/api/models");
-  renderModels(info);
-  $("#cfg-url").value = info.base_url;
-  $("#cfg-model").value = info.model;
-  $("#cfg-key").value = "";
-  $("#cfg-status").textContent = info.reachable
-    ? `${info.models.length} model${info.models.length === 1 ? "" : "s"} found`
-    : "not reachable — check the endpoint";
-  await renderRuntimes();
-  dlg.showModal();
-};
-
-$("#cfg-cancel").onclick = () => dlg.close();
-
-$("#cfg-pull-btn").onclick = async () => {
-  const name = $("#cfg-pull").value.trim();
-  if (!name) return;
-  const status = $("#cfg-status");
-  const button = $("#cfg-pull-btn");
-  button.disabled = true;
-  status.textContent = `pulling ${name}…`;
-
-  try {
-    const res = await fetch("/api/models/pull", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: name }),
-    });
-    if (!res.ok || !res.body) throw new Error(`http ${res.status}`);
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let cut;
-      while ((cut = buffer.indexOf("\n\n")) >= 0) {
-        const block = buffer.slice(0, cut);
-        buffer = buffer.slice(cut + 2);
-        const event = parseEvent(block);
-        if (!event) continue;
-        if (event.name === "pull") {
-          const d = event.data;
-          const pct = d.total ? ` ${Math.round((100 * d.completed) / d.total)}%` : "";
-          status.textContent = `${d.status}${pct}`;
-        } else if (event.name === "error") {
-          status.textContent = event.data.message;
-        } else if (event.name === "done") {
-          status.textContent = `${event.data.model} installed`;
-          renderModels({ ...event.data, base_url: $("#cfg-url").value });
-          $("#cfg-model").value = event.data.model;
-        }
-      }
-    }
-  } catch (err) {
-    status.textContent = err.message;
-  } finally {
-    button.disabled = false;
-  }
-};
-
-$("#config-form").onsubmit = async (e) => {
-  e.preventDefault();
-  $("#cfg-status").textContent = "saving…";
-  try {
-    await api("/api/settings", {
-      method: "POST",
-      body: JSON.stringify({
-        base_url: $("#cfg-url").value.trim(),
-        api_key: $("#cfg-key").value.trim(),
-        model: $("#cfg-model").value.trim(),
-      }),
-    });
-    await refreshModels();
-    await refreshStats();
-    dlg.close();
-  } catch (err) {
-    $("#cfg-status").textContent = err.message;
-  }
-};
+$("#stop").onclick = () => state.controller?.abort();
+$("#new-chat").onclick = () => { setView("chat"); newChat(); };
+$("#filter").oninput = (e) => { state.filter = e.target.value; renderSessions(); };
 
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-    e.preventDefault();
-    newChat();
+    e.preventDefault(); setView("chat"); newChat();
   }
 });
 
-/* ---------------------------------------------------------------- boot */
+/* ----------------------------------------------------------------- boot */
 
 (async function boot() {
-  startLifecycle();
+  startLease();
+
+  selects.theme = makeSelect($("#theme-select"), {
+    placeholder: "Atlas",
+    onChange: (id) => applyTheme(id, ""),
+  });
+  selects.theme.setOptions(THEMES.map((t) => ({ value: t.id, label: t.label })));
+  state.usagePos = saved("usagePos", "right");
+  state.usageOpen = saved("usageOpen", "false") === "true";
+  const savedTheme = saved("theme", "atlas");
+  const urlTheme = new URLSearchParams(location.search).get("theme");
+  const startTheme = urlTheme && THEMES.some((t) => t.id === urlTheme) ? urlTheme : savedTheme;
+  applyTheme(THEMES.some((t) => t.id === startTheme) ? startTheme : "atlas", saved("accent", ""));
+
+  selects.model = makeSelect($("#model-select"), {
+    placeholder: "Model",
+    onChange: async (model) => {
+      state.modelChoice = model;
+      if (!state.current) return;
+      await api(`/api/sessions/${state.current}`, {
+        method: "PATCH", body: JSON.stringify({ model }),
+      });
+      await refreshSessions();
+    },
+  });
+
+  selects.profile = makeSelect($("#profile-select"), {
+    placeholder: "Personal",
+    onChange: async (id) => {
+      await api("/api/profiles", {
+        method: "POST", body: JSON.stringify({ action: "switch", id }),
+      });
+      location.reload();
+    },
+  });
+
+  selects.memCategory = makeSelect($("#mem-filter-select"), {
+    onChange: () => refreshMemories(),
+  });
+  selects.memAddCategory = makeSelect($("#mem-add-select"), {});
+
+  $("#mem-filter").oninput = () => renderMemoryGroups();
+  $("#mem-add-btn").onclick = async () => {
+    const text = $("#mem-add-text").value.trim();
+    if (!text) return;
+    try {
+      await api("/api/memories", {
+        method: "POST",
+        body: JSON.stringify({
+          category: selects.memAddCategory.value || "temporary",
+          content: text,
+          confidence: 0.8,
+        }),
+      });
+      $("#mem-add-text").value = "";
+      await refreshMemories();
+      await refreshStats();
+    } catch (err) { alert(err.message); }
+  };
+
   await refreshStats();
   await refreshProfiles();
   await refreshModels();
+  refreshRuntimes().catch(() => {});
+  refreshTools().catch(() => {});
+  await refreshSkills().catch(() => {});
+  refreshArtifacts().catch(() => {});
   await refreshSessions();
   if (state.sessions.length) await openSession(state.sessions[0].id);
   else await newChat();
-  if (location.hash === "#settings") $("#settings").click();
-  if (location.hash === "#memories") $("#memories-btn").click();
+
+  if (state.usageOpen) refreshMemories().then(renderUsagePanel).catch(() => {});
+  if (new URLSearchParams(location.search).has("slash")) {
+    const input = $("#input");
+    input.value = "/";
+    input.dispatchEvent(new Event("input"));
+  }
+  if (location.hash === "#new") newChat();
+  const testMenu = new URLSearchParams(location.search).get("menu");
+  if (testMenu === "model" || location.hash === "#model-menu") selects.model.open();
+  if (testMenu === "mode" || location.hash === "#mode-menu") selects.mode.open();
+  if (testMenu === "profile" || location.hash === "#profile-menu") selects.profile.open();
+  if (location.hash === "#settings") openSettings();
+  if (location.hash === "#tools") setView("tools");
+  if (location.hash === "#artifacts") setView("artifacts");
+  if (location.hash === "#usage") setView("usage");
+  if (location.hash === "#memory") setView("memory");
 })();
