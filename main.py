@@ -213,7 +213,7 @@ def trim(messages: list[dict], keep: int = 20) -> list[dict]:
 
 
 def parse_args() -> tuple[str, str | None]:
-    mode = "coach"
+    mode = modes.DEFAULT
     once: str | None = None
     words: list[str] = []
     args = sys.argv[1:]

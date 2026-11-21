@@ -13,7 +13,7 @@ const rememberLocal = (key, value) => {
 const state = {
   sessions: [],
   current: null,
-  mode: "coach",
+  mode: "agent",
   modes: [],
   models: [],
   runtimes: [],

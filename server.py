@@ -497,7 +497,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **models.describe(), "saved": saved})
 
             if path == "/api/sessions":
-                mode = body.get("mode") or "coach"
+                mode = modes.canonical(body.get("mode") or "")
                 sid = memory.create_session(mode=mode, model=body.get("model"))
                 return self._json({"id": sid}, 201)
 
@@ -537,7 +537,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "empty message"}, 400)
 
                 session = memory.get_session(sid) or {}
-                mode = body.get("mode") or session.get("mode") or "coach"
+                mode = modes.canonical(body.get("mode") or session.get("mode") or "")
                 model = body.get("model") or session.get("model") or None
                 if body.get("model"):
                     memory.update_session(sid, model=body["model"])
