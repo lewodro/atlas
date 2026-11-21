@@ -1196,38 +1196,63 @@ let slashItems = [];
 let slashIndex = 0;
 
 function slashEntries() {
+  // Installed skills come straight from /api/skills (skills.list_skills), so
+  // this reflects what the active profile actually has on disk.
   const skills = state.skills.map((s) => ({
     id: s.id,
     label: s.name || s.id,
     desc: s.description || "",
     icon: "spark",
     prefix: "/skill:",
+    group: "skill",
+    enabled: s.enabled !== false,
   }));
-  const actions = SLASH_ACTIONS.map((a) => ({ ...a, prefix: "/" }));
+  const actions = SLASH_ACTIONS.map((a) => ({ ...a, prefix: "/", group: "action", enabled: true }));
   return [...skills, ...actions];
 }
 
 function renderSlash(query) {
   const all = slashEntries();
-  const q = query.toLowerCase().replace(/^\//, "");
-  slashItems = all.filter((item) =>
-    !q || item.id.toLowerCase().includes(q) || item.label.toLowerCase().includes(q)
-  ).slice(0, 8);
+  const raw = query.toLowerCase().replace(/^\//, "");
+  // "/skill" should reveal the installed skills themselves, not just the
+  // "Skills" workspace action that happens to share the word. "/skill:foo"
+  // narrows those skills by id, name, or description.
+  const skillMode = raw === "skill" || raw.startsWith("skill:");
+  const term = skillMode ? raw.replace(/^skill:/, "") : raw;
+  slashItems = all
+    .filter((item) => {
+      if (skillMode && item.group !== "skill") return false;
+      return !term
+        || item.id.toLowerCase().includes(term)
+        || item.label.toLowerCase().includes(term)
+        || (item.group === "skill" && item.desc.toLowerCase().includes(term));
+    })
+    .sort((a, b) => {
+      if (a.group !== b.group) return a.group === "skill" ? -1 : 1;
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      return 0;
+    })
+    .slice(0, 8);
   slashIndex = 0;
   const menu = $("#slash-menu");
   if (!slashItems.length) { menu.hidden = true; menu.innerHTML = ""; return; }
-  paintSlash();
   menu.hidden = false;
+  paintSlash(true);
 }
 
-function paintSlash() {
-  $("#slash-menu").innerHTML = slashItems.map((item, i) => `
+function paintSlash(animate = false) {
+  const menu = $("#slash-menu");
+  menu.classList.toggle("slash-animate", animate);
+  menu.innerHTML = slashItems.map((item, i) => {
+    const suffix = item.group === "skill" && !item.enabled ? " · disabled" : "";
+    return `
     <button type="button" class="slash-item ${i === slashIndex ? "active" : ""}" data-i="${i}">
       ${icon(item.icon)}
       <span class="s-label">${esc(item.prefix + item.id)}</span>
-      <span class="s-desc">${esc(item.desc)}</span>
-    </button>`).join("");
-  $("#slash-menu").querySelectorAll("button").forEach((button) => {
+      <span class="s-desc">${esc(item.desc + suffix)}</span>
+    </button>`;
+  }).join("");
+  menu.querySelectorAll("button").forEach((button) => {
     button.onclick = () => chooseSlash(Number(button.dataset.i));
   });
 }
