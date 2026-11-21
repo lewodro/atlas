@@ -23,3 +23,4 @@
 - librarian.py indexes notes so recall can find older material.
 - bench.py and eval/ measure behavioral regressions between changes.
 - tests/ uses unittest; run via atlas test or python -m unittest discover.
+- web/ holds the local UI served by server.py --open.
