@@ -20,3 +20,4 @@
 - orchestrator.py coordinates multi-step agent work across tools.
 - context.py assembles the context window sent to the model.
 - artifacts.py persists generated files for later retrieval.
+- librarian.py indexes notes so recall can find older material.
