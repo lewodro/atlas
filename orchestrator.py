@@ -119,8 +119,22 @@ def remove_instance(instance_id: str) -> bool:
     return True
 
 
+def instance_env(instance_id: str) -> dict:
+    """Environment for an isolated Atlas process. No shared memory or chats."""
+    row = _instances().get(instance_id)
+    if not row:
+        raise ValueError(f"no such instance: {instance_id}")
+    return {
+        "ATLAS_DATA_DIR": str(config.ROOT_DATA / "instances" / instance_id),
+        "ATLAS_WORKSPACE": row["workspace"],
+        "ATLAS_PROFILE": instance_id,
+        "ATLAS_NOTES_DIR": str(config.ROOT_DATA / "instances" / instance_id / "notes"),
+    }
+
+
 def main() -> None:
     import argparse
+    import sys
 
     parser = argparse.ArgumentParser(description="Atlas agent roles and instances")
     sub = parser.add_subparsers(dest="action", required=True)
@@ -133,6 +147,9 @@ def main() -> None:
     create.add_argument("workspace")
     remove = sub.add_parser("remove")
     remove.add_argument("id")
+    run = sub.add_parser("run")
+    run.add_argument("id")
+    run.add_argument("--port", type=int, default=7777)
     args = parser.parse_args()
 
     if args.action == "roles":
@@ -150,6 +167,15 @@ def main() -> None:
         print(f"created {row['id']}: {row['label']} -> {row['workspace']}")
     elif args.action == "remove":
         print("removed" if remove_instance(args.id) else "no such instance")
+    elif args.action == "run":
+        import os
+        import subprocess
+
+        env = dict(os.environ)
+        env.update(instance_env(args.id))
+        raise SystemExit(subprocess.call(
+            [sys.executable, "server.py", "--port", str(args.port)], env=env
+        ))
 
 
 if __name__ == "__main__":

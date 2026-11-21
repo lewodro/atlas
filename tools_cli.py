@@ -101,6 +101,9 @@ def main() -> int:
     agent_create.add_argument("workspace")
     agent_remove = agents_sub.add_parser("remove")
     agent_remove.add_argument("id")
+    agent_run = agents_sub.add_parser("run")
+    agent_run.add_argument("id")
+    agent_run.add_argument("--port", type=int, default=7777)
 
     sub.add_parser("workspace", help="show workspace and Git context")
 
@@ -133,6 +136,8 @@ def main() -> int:
                 argv += [args.label, args.workspace]
             elif args.action == "remove":
                 argv += [args.id]
+            elif args.action == "run":
+                argv += [args.id, "--port", str(args.port)]
             with patch_sys_argv(argv):
                 orchestrator.main()
             return 0
