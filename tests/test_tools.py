@@ -147,7 +147,7 @@ class FilesystemTools(unittest.TestCase):
 class ToolDispatch(unittest.TestCase):
     def test_new_tools_are_registered(self):
         names = {t["function"]["name"] for t in main.TOOLS}
-        self.assertTrue({"web_search", "web_fetch", "filesystem"} <= names)
+        self.assertTrue({"web_search", "web_fetch", "files"} <= names)
 
     def test_run_tool_dispatches(self):
         with patch.object(main.webtools, "format_search", return_value="SEARCH OK"), \
@@ -155,7 +155,7 @@ class ToolDispatch(unittest.TestCase):
              patch.object(main.fstools, "read", return_value="READ OK"):
             self.assertEqual(main.run_tool("web_search", {"query": "x"}), "SEARCH OK")
             self.assertEqual(main.run_tool("web_fetch", {"url": "https://example.org/"}), "FETCH OK")
-            self.assertEqual(main.run_tool("filesystem", {"action": "read", "path": "a"}), "READ OK")
+            self.assertEqual(main.run_tool("files", {"action": "read", "path": "a"}), "READ OK")
 
 
 if __name__ == "__main__":

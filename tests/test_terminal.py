@@ -111,11 +111,11 @@ class GitInit(unittest.TestCase):
 class RegistryTools(unittest.TestCase):
     def test_new_tools_registered(self):
         ids = {row["id"] for row in registry.metadata()}
-        self.assertIn("file_manager", ids)
+        self.assertIn("files", ids)
         self.assertIn("terminal", ids)
         terminal = next(r for r in registry.metadata() if r["id"] == "terminal")
         self.assertEqual(terminal["permission"], "ALLOW")
-        manager = next(r for r in registry.metadata() if r["id"] == "file_manager")
+        manager = next(r for r in registry.metadata() if r["id"] == "files")
         self.assertEqual(manager["permission"], "ASK")
 
 

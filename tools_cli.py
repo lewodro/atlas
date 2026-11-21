@@ -149,7 +149,7 @@ def main() -> int:
             if args.action == "move":
                 payload = {"action": "move", "path": args.source,
                            "destination": args.destination}
-            result = registry.run("file_manager", payload, approved=True)
+            result = registry.run("files", payload, approved=True)
             print(registry.content(result))
             return 0 if result["ok"] else 1
 

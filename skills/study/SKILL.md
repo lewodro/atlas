@@ -2,7 +2,7 @@
 name: Study
 description: Comprehensive study notes, large summaries, math functions and diagrams with clear understanding at low token cost
 tags: [study, notes, summary, learn, math, function, graph, diagram, exam, explain]
-tools: [plot_function, filesystem, file_manager, remember]
+tools: [plot_function, files, remember]
 ---
 
 # Study
@@ -35,7 +35,7 @@ For a long text or codebase:
 ## Long notes
 
 When the user wants persistent study notes:
-- write them to the workspace with `file_manager`, e.g. `notes/topic.md`
+- write them to the workspace with `files`, e.g. `notes/topic.md`
 - structure: title, one-line summary, sections, formulas, worked example, pitfalls
 - register the file as an artifact by writing it (the tool does this)
 - do not paste the whole note into chat — write the file and show its path

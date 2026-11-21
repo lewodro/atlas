@@ -340,7 +340,7 @@ const TOOL_LABELS_EXTRA = {
   git_diff: "Read the diff",
   git_log: "Read commit history",
   terminal: "Ran a terminal command",
-  file_manager: "Managed workspace files",
+  files: "Managed workspace files",
 };
 function memoryLine(payload) {
   const el = document.createElement("details");
@@ -695,7 +695,7 @@ async function refreshTools() {
 }
 
 async function configureTool(name) {
-  if (name === "filesystem") {
+  if (name === "files") {
     const current = state.workspace?.root || "";
     const path = prompt("Workspace folder Atlas may read and edit", current);
     if (!path) return;
@@ -711,7 +711,7 @@ async function configureTool(name) {
 }
 
 function toolCard(t) {
-  const configurable = ["filesystem", "web_search", "web_fetch"].includes(t.id);
+  const configurable = ["files", "web_search", "web_fetch"].includes(t.id);
   return `<article class="card">
     <div class="card-head">${icon(CATEGORY_ICON[t.category] || "plug")}<h3>${esc(t.id)}</h3></div>
     <p>${esc(t.description)}</p>
@@ -1029,10 +1029,10 @@ const dlg = $("#configure");
 let runtimeCache = { at: 0, list: [] };
 
 function fsAvailable() {
-  return state.tools.find((t) => t.name === "filesystem")?.available || false;
+  return state.tools.find((t) => t.id === "files")?.available || false;
 }
 function fsNote() {
-  const fs = state.tools.find((t) => t.name === "filesystem");
+  const fs = state.tools.find((t) => t.id === "files");
   return fs?.workspace || fs?.error || "no workspace configured";
 }
 

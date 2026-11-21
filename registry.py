@@ -231,31 +231,6 @@ def _web_fetch(args: dict) -> str:
     return webtools.fetch_page(args.get("url", ""))
 
 
-def _filesystem(args: dict) -> Any:
-    action = str(args.get("action", "")).lower()
-    path = str(args.get("path") or ".")
-    if action == "read":
-        return fstools.read(path)
-    if action == "write":
-        text = fstools.write(path, args.get("content", ""))
-        return {"ok": True, "data": text, "artifact_hint": {"title": path, "kind": "file", "path": path}}
-    if action == "list":
-        return fstools.list_dir(path)
-    raise ValueError("action must be read, write or list")
-
-
-def _git_init(args: dict) -> str:
-    return gittools.init_repo()
-
-
-def _git_status(args: dict) -> str:
-    return gittools.status_text()
-
-
-def _git_diff(args: dict) -> str:
-    return gittools.diff_text()
-
-
 def _plot(args: dict) -> str:
     if args.get("eval_at") is not None:
         return mathtools.evaluate(args.get("expression", ""), float(args["eval_at"]))
@@ -313,6 +288,18 @@ def _skills_load(args: dict) -> str:
     return f"SKILL {item['name']}:\n{item['body'][:3000]}"
 
 
+def _git_init(args: dict) -> str:
+    return gittools.init_repo()
+
+
+def _git_status(args: dict) -> str:
+    return gittools.status_text()
+
+
+def _git_diff(args: dict) -> str:
+    return gittools.diff_text()
+
+
 def _git_log(args: dict) -> str:
     return gittools.log_text(int(args.get("limit", 8)))
 
@@ -333,18 +320,6 @@ def register_builtins() -> None:
         handler=_web_fetch, category="web", provider="atlas",
     ))
     register(ToolSpec(
-        id="filesystem",
-        description="Read, write or list files inside the configured workspace. No shell or delete.",
-        parameters={"type": "object", "properties": {
-            "action": {"type": "string", "enum": ["read", "write", "list"]},
-            "path": {"type": "string"},
-            "content": {"type": "string", "description": "Required for write."}},
-            "required": ["action"]},
-        handler=_filesystem, category="filesystem", provider="atlas",
-        permission=lambda args: "ASK" if str(args.get("action", "")).lower() == "write" else "ALLOW",
-        available=lambda: fstools.status()["available"],
-    ))
-    register(ToolSpec(
         id="plot_function",
         description="Draw a text plot of a math function, e.g. x**2 or sin(x). Safe expression parser, no code execution.",
         parameters={"type": "object", "properties": {
@@ -356,8 +331,8 @@ def register_builtins() -> None:
         handler=_plot, category="study", provider="atlas",
     ))
     register(ToolSpec(
-        id="file_manager",
-        description="Manage workspace files: list, read, write, mkdir, move, delete. write needs a full file path e.g. demo/note.txt; mkdir makes folders first.",
+        id="files",
+        description="Workspace file tool: list, read, write, mkdir, move, delete. write needs a path e.g. demo/note.txt; mkdir makes folders first.",
         parameters={"type": "object", "properties": {
             "action": {"type": "string", "enum": ["list", "read", "write", "mkdir", "move", "delete"]},
             "path": {"type": "string", "description": "Relative file path, e.g. demo/note.txt."},

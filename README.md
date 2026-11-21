@@ -227,8 +227,7 @@ Three tools are live in chat and on the CLI. See **[docs/tools.md](docs/tools.md
 |---|---|---|
 | Web search | DuckDuckGo results, no key (Brave optional) | `atlas net search "query"` |
 | Web fetch | Readable text from a public page, with source URL | `atlas net fetch https://…` |
-| Filesystem | Read / write / list inside one chosen workspace | `atlas fs read path` |
-| File manager | mkdir / move / delete with approval | `atlas fm list` |
+| Files | Read / write / list / mkdir / move / delete in the workspace | `atlas fs read path` |
 | Terminal | Allowlisted `ls`, `git status`, `git log`, … | `atlas term ls` |
 | Git | Local status / diff / log | `atlas tools run git_status` |
 
