@@ -197,6 +197,8 @@ function setView(name) {
     $("#workspace-title").textContent = titles[name][0];
     $("#workspace-subtitle").textContent = titles[name][1];
   }
+  $("#view-path-name").textContent = name;
+  $("#view-status").textContent = viewStatus(name);
   $("#memory-controls").hidden = name !== "memory";
   $("#workspace-actions").innerHTML = name === "memory"
     ? `<button class="text-btn" id="mem-export">${icon("download")} Export</button>` : "";
@@ -209,6 +211,23 @@ function setView(name) {
   if (name === "usage") renderUsage();
   $("#sidebar").classList.remove("open");
 }
+
+function viewStatus(name) {
+  if (name === "tools") {
+    const n = state.tools.filter((t) => t.available).length;
+    return `${n}/${state.tools.length} available`;
+  }
+  if (name === "skills") {
+    const n = state.skills.filter((s) => s.enabled).length;
+    return `${n} installed`;
+  }
+  if (name === "artifacts") return `${state.artifacts.length} files`;
+  if (name === "usage") return "local only";
+  if (name === "memory") return `${state.memories.length} facts`;
+  return "";
+}
+
+$("#view-back").onclick = () => setView("chat");
 
 document.querySelectorAll(".primary-nav .nav-item").forEach((item) => {
   item.onclick = () => setView(item.dataset.view);
@@ -598,6 +617,7 @@ async function refreshMemories() {
   selects.memAddCategory?.setOptions(data.categories.map((c) => ({ value: c, label: c })));
   selects.memAddCategory?.setValue("temporary");
   renderMemoryGroups();
+  $("#view-status").textContent = viewStatus(state.view);
 }
 
 function renderMemoryGroups() {
@@ -671,6 +691,7 @@ async function refreshTools() {
   } catch { state.toolActivity = []; }
   if (state.view === "tools") renderTools();
   if (state.view === "usage") renderUsage();
+  $("#view-status").textContent = viewStatus(state.view);
 }
 
 async function configureTool(name) {
@@ -734,6 +755,7 @@ async function refreshSkills() {
     state.skills = (await api("/api/skills")).skills || [];
   } catch { state.skills = []; }
   if (state.view === "skills") renderSkills();
+  $("#view-status").textContent = viewStatus(state.view);
 }
 
 function renderSkills() {
@@ -783,6 +805,7 @@ async function refreshArtifacts() {
     state.artifacts = (await api("/api/artifacts")).artifacts || [];
   } catch { state.artifacts = []; }
   if (state.view === "artifacts") renderArtifacts();
+  $("#view-status").textContent = viewStatus(state.view);
 }
 
 function renderArtifactList(items) {
@@ -832,6 +855,8 @@ const THEMES = [
   { id: "midnight", label: "Midnight", note: "pitch black · deep blue" },
   { id: "mono", label: "Mono", note: "black · white/gray" },
   { id: "forest", label: "Forest", note: "black · muted green" },
+  { id: "graphite", label: "Graphite", note: "pure black · white" },
+  { id: "funky", label: "Funky", note: "near-black · soft violet" },
 ];
 
 const ACCENTS = [
@@ -839,6 +864,7 @@ const ACCENTS = [
   { label: "Blue", value: "#5b8cff" },
   { label: "Green", value: "#5fbf87" },
   { label: "White", value: "#e8e8e8" },
+  { label: "Violet", value: "#b18cff" },
 ];
 
 function paintThemeChoices() {
@@ -1179,7 +1205,9 @@ document.addEventListener("keydown", (e) => {
   state.usagePos = saved("usagePos", "right");
   state.usageOpen = saved("usageOpen", "false") === "true";
   const savedTheme = saved("theme", "atlas");
-  applyTheme(THEMES.some((t) => t.id === savedTheme) ? savedTheme : "atlas", saved("accent", ""));
+  const urlTheme = new URLSearchParams(location.search).get("theme");
+  const startTheme = urlTheme && THEMES.some((t) => t.id === urlTheme) ? urlTheme : savedTheme;
+  applyTheme(THEMES.some((t) => t.id === startTheme) ? startTheme : "atlas", saved("accent", ""));
 
   selects.model = makeSelect($("#model-select"), {
     placeholder: "Model",
