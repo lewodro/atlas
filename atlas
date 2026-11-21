@@ -36,6 +36,7 @@ case "${1:-}" in
   fm)     shift; exec uv run python tools_cli.py fm "$@" ;;
   term)   shift; exec uv run python tools_cli.py term "$@" ;;
   agents) shift; exec uv run python tools_cli.py agents "$@" ;;
+  goal)   shift; exec uv run python tools_cli.py goal "$@" ;;
   workspace) shift; exec uv run python tools_cli.py workspace "$@" ;;
   net)    shift; exec uv run python tools_cli.py net "$@" ;;
   fs)     shift; exec uv run python tools_cli.py fs "$@" ;;

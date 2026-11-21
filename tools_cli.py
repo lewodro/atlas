@@ -17,6 +17,7 @@ import sys
 
 import artifacts
 import fstools
+import goals
 import netguard
 import orchestrator
 import registry
@@ -105,6 +106,13 @@ def main() -> int:
     agent_run.add_argument("id")
     agent_run.add_argument("--port", type=int, default=7777)
 
+    goal = sub.add_parser("goal", help="set or view the agent goal")
+    goal_sub = goal.add_subparsers(dest="action", required=True)
+    set_goal = goal_sub.add_parser("set")
+    set_goal.add_argument("text", nargs="+")
+    goal_sub.add_parser("status")
+    goal_sub.add_parser("clear")
+
     sub.add_parser("workspace", help="show workspace and Git context")
 
     net = sub.add_parser("net", help="web search and fetch")
@@ -140,6 +148,20 @@ def main() -> int:
                 argv += [args.id, "--port", str(args.port)]
             with patch_sys_argv(argv):
                 orchestrator.main()
+            return 0
+
+        if args.group == "goal":
+            if args.action == "set":
+                item = goals.create(" ".join(args.text))
+                print(f"goal set: {item['id']} · {item['text']}")
+            elif args.action == "clear":
+                item = goals.current()
+                if item:
+                    goals.finish(item["id"])
+                print("goal cleared")
+            else:
+                item = goals.current()
+                print(json.dumps(item, indent=2) if item else "no active goal")
             return 0
 
         if args.group == "fm":
