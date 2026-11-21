@@ -14,3 +14,4 @@
 - tools_cli.py is the dispatch surface for tools, skills, and artifacts.
 - registry.py tracks which tools and skills are currently registered.
 - webtools.py and netguard.py gate outbound network access.
+- fstools.py and gittools.py provide sandboxed file and git operations.
