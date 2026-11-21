@@ -102,6 +102,14 @@ def load_skill(skill_id: str) -> dict | None:
 def select_skill(text: str) -> str | None:
     """Keyword match against advertised metadata. No model call, no body read."""
     lowered = text.lower()
+    if any(word in lowered for word in (
+        "study", "notes", "note taking", "summarize", "summary", "explain",
+        "graph", "function", "formula", "learn", "revision", "exam",
+    )):
+        skill = next((s for s in list_skills()
+                      if s["id"] == "study" and s["enabled"]), None)
+        if skill:
+            return "study"
     if any(phrase in lowered for phrase in (
         "what do you know about me", "who am i", "what am i studying"
     )):

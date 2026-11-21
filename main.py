@@ -63,7 +63,7 @@ def build_system(mode: str, user_text: str, skill_id: str | None = None) -> str:
     notes = memory.recall(user_text)
     if memory.digest():
         notes = memory.digest() + ("\n\n" + notes if notes else "")
-    skill_id = skill_id or skills.select_skill(user_text)
+    skill_id = skill_id or FORCE_SKILL or skills.select_skill(user_text)
     # Project skills must reason from tool results, not from a global scan of ~/dev.
     activity = "" if skill_id in ("project-explorer", "github-engineer") else activity_block()
     prompt = modes.build(mode, notes, activity)
@@ -212,14 +212,21 @@ def trim(messages: list[dict], keep: int = 20) -> list[dict]:
 # ---------------------------------------------------------------- cli
 
 
+FORCE_SKILL: str | None = None
+
+
 def parse_args() -> tuple[str, str | None]:
+    global FORCE_SKILL
     mode = modes.DEFAULT
     once: str | None = None
     words: list[str] = []
     args = sys.argv[1:]
     i = 0
     while i < len(args):
-        if args[i] == "--mode" and i + 1 < len(args):
+        if args[i] == "--study":
+            FORCE_SKILL = "study"
+            i += 1
+        elif args[i] == "--mode" and i + 1 < len(args):
             mode = args[i + 1].lower()
             i += 2
         elif args[i] == "--once" and i + 1 < len(args):
