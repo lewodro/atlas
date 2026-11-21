@@ -18,6 +18,7 @@ import sys
 import artifacts
 import fstools
 import netguard
+import orchestrator
 import registry
 import skills
 import webtools
@@ -27,6 +28,20 @@ WEB_TOOLS = [
     {"name": "web_search", "status": "available", "note": "DuckDuckGo HTML (no key) or Brave if ATLAS_BRAVE_KEY is set"},
     {"name": "web_fetch", "status": "available", "note": "public http(s), SSRF-checked"},
 ]
+
+
+class patch_sys_argv:
+    def __init__(self, values):
+        self.values = values
+        self.saved = None
+
+    def __enter__(self):
+        self.saved = sys.argv
+        sys.argv = self.values
+        return self
+
+    def __exit__(self, *args):
+        sys.argv = self.saved
 
 
 def main() -> int:
@@ -75,6 +90,18 @@ def main() -> int:
     term = sub.add_parser("term", help="allowlisted read-only terminal command")
     term.add_argument("command", nargs=argparse.REMAINDER)
 
+    agents = sub.add_parser("agents", help="roles and instances")
+    agents_sub = agents.add_subparsers(dest="action", required=True)
+    agents_sub.add_parser("roles")
+    agents_sub.add_parser("list")
+    agent_plan = agents_sub.add_parser("plan")
+    agent_plan.add_argument("text", nargs="+")
+    agent_create = agents_sub.add_parser("create")
+    agent_create.add_argument("label")
+    agent_create.add_argument("workspace")
+    agent_remove = agents_sub.add_parser("remove")
+    agent_remove.add_argument("id")
+
     sub.add_parser("workspace", help="show workspace and Git context")
 
     net = sub.add_parser("net", help="web search and fetch")
@@ -98,6 +125,18 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.group == "agents":
+            argv = ["atlas agents", args.action]
+            if args.action == "plan":
+                argv += args.text
+            elif args.action == "create":
+                argv += [args.label, args.workspace]
+            elif args.action == "remove":
+                argv += [args.id]
+            with patch_sys_argv(argv):
+                orchestrator.main()
+            return 0
+
         if args.group == "fm":
             payload = {"action": args.action, "path": getattr(args, "path", ".")}
             if args.action == "write":
