@@ -15,3 +15,4 @@
 - registry.py tracks which tools and skills are currently registered.
 - webtools.py and netguard.py gate outbound network access.
 - fstools.py and gittools.py provide sandboxed file and git operations.
+- termtools.py wraps shell execution for agent-driven commands.
