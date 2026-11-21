@@ -8,3 +8,4 @@
 - Profiles isolate memory, goals, and artifacts under data/profiles.
 - llm.py centralizes provider calls so models.py can swap backends cleanly.
 - models.py --use switches the active model for the current profile.
+- memory.py exposes both stats and semantic recall through the atlas CLI.
