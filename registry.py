@@ -22,6 +22,7 @@ from typing import Any, Callable
 import config
 import fstools
 import gittools
+import mathtools
 import skills
 import termtools
 import webtools
@@ -255,6 +256,16 @@ def _git_diff(args: dict) -> str:
     return gittools.diff_text()
 
 
+def _plot(args: dict) -> str:
+    if args.get("eval_at") is not None:
+        return mathtools.evaluate(args.get("expression", ""), float(args["eval_at"]))
+    return mathtools.plot(
+        args.get("expression", ""),
+        float(args.get("xmin", -3.14)), float(args.get("xmax", 3.14)),
+        int(args.get("width", 48)), int(args.get("height", 9)),
+    )
+
+
 def _file_manager(args: dict) -> Any:
     action = str(args.get("action", "")).lower()
     path_value = str(args.get("path") or "").strip()
@@ -332,6 +343,17 @@ def register_builtins() -> None:
         handler=_filesystem, category="filesystem", provider="atlas",
         permission=lambda args: "ASK" if str(args.get("action", "")).lower() == "write" else "ALLOW",
         available=lambda: fstools.status()["available"],
+    ))
+    register(ToolSpec(
+        id="plot_function",
+        description="Draw a text plot of a math function, e.g. x**2 or sin(x). Safe expression parser, no code execution.",
+        parameters={"type": "object", "properties": {
+            "expression": {"type": "string", "description": "e.g. x**2, sin(x), sqrt(abs(x))"},
+            "xmin": {"type": "number"}, "xmax": {"type": "number"},
+            "width": {"type": "integer"}, "height": {"type": "integer"},
+            "eval_at": {"type": "number", "description": "Evaluate at one x instead of plotting."}},
+            "required": ["expression"]},
+        handler=_plot, category="study", provider="atlas",
     ))
     register(ToolSpec(
         id="file_manager",

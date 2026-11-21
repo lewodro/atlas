@@ -2,7 +2,7 @@
 name: Study
 description: Comprehensive study notes, large summaries, math functions and diagrams with clear understanding at low token cost
 tags: [study, notes, summary, learn, math, function, graph, diagram, exam, explain]
-tools: [skills_list, skills_load, filesystem, file_manager, remember]
+tools: [plot_function, filesystem, file_manager, remember]
 ---
 
 # Study
@@ -15,7 +15,8 @@ The goal is high understanding with few tokens — not long walls of text.
 1. **Definition** — one precise sentence.
 2. **Worked example** — one concrete case with numbers or code.
 3. **Picture** — draw a function, graph or structure when it helps:
-   - use a tiny ASCII/Unicode plot, e.g. `f(x)=x²`: `▁▂▃▅▇█`
+   - call `plot_function` with an expression like `x**2` or `sin(x)` and paste
+  the real text plot it returns — never fake a plot by hand
    - use a short LaTeX line for formulas: `$f(x)=x^2$`
    - use a small table for comparisons
 4. **Check** — one question that tests understanding, not recall.
