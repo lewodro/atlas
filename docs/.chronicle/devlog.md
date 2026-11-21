@@ -6,3 +6,4 @@
 - Default agent behavior is wired through modes.py; coach is the startup mode.
 - server.py owns the goal loop; goals.py only persists state.
 - Profiles isolate memory, goals, and artifacts under data/profiles.
+- llm.py centralizes provider calls so models.py can swap backends cleanly.
