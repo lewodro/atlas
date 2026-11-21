@@ -43,6 +43,10 @@ MODEL = os.getenv("ATLAS_MODEL") or (
 # small model feel slow; users can raise this for larger/custom models.
 MAX_TOKENS = max(64, int(os.getenv("ATLAS_MAX_TOKENS", "512")))
 
+# Small local models silently return empty answers when the system prompt is
+# too long. Keep the default compact; raise it for 12B+ models.
+MAX_PROMPT_CHARS = max(1200, int(os.getenv("ATLAS_MAX_PROMPT_CHARS", "4200")))
+
 WHERE = f"{'remote GPU' if REMOTE else 'this machine'} @ {BASE_URL}"
 
 # Memory can live in the repo, any ordinary folder, or inside an Obsidian
