@@ -377,6 +377,12 @@ const TOOL_LABELS_EXTRA = {
   git_log: "Read commit history",
   terminal: "Ran a terminal command",
   files: "Managed workspace files",
+  github_issues: "Checked GitHub issues",
+  github_prs: "Checked GitHub pull requests",
+  github_repo: "Read GitHub repo info",
+  image_generate: "Generated an image",
+  image_edit: "Edited an image",
+  code_execute: "Ran Python code",
 };
 function memoryLine(payload) {
   const el = document.createElement("details");
@@ -720,18 +726,10 @@ async function exportMemories() {
 
 /* --------------------------------------------------------------- tools */
 
-const FUTURE_TOOLS = [
-  { icon: "terminal", name: "Terminal", desc: "Sandboxed shell. Not implemented." },
-  { icon: "git", name: "GitHub", desc: "Remote issues and pull requests. Local Git is already available." },
-  { icon: "image", name: "Image generation", desc: "Create and edit images locally. Not implemented." },
-  { icon: "code", name: "Code execution", desc: "Run generated code in a sandbox. Not implemented." },
-  { icon: "database", name: "Last Seat MCP", desc: "Project tool server. Not implemented." },
-  { icon: "plug", name: "Other MCP servers", desc: "Register external providers. Not implemented." },
-];
-
 const CATEGORY_ICON = {
   web: "globe", filesystem: "folder", git: "git", terminal: "terminal",
-  skills: "spark", memory: "memory", general: "plug",
+  github: "git", image: "image", execution: "code", provider: "plug",
+  study: "spark", skills: "spark", memory: "memory", general: "plug",
 };
 
 async function refreshTools() {
@@ -791,12 +789,9 @@ function renderTools() {
         ? `${esc(ws.branch || "detached")} · ${ws.dirty ? "dirty" : "clean"} · ${ws.changed} changed`
         : "not a Git repository"}</span>
     </div>
-    <div class="group-label">Coming next — not implemented</div>
-    <div class="card-grid">${FUTURE_TOOLS.map((t) => `
-      <article class="card">
-        <div class="card-head">${icon(t.icon)}<h3>${esc(t.name)}</h3></div>
-        <p>${esc(t.desc)}</p><span class="pill quiet">Not configured</span>
-      </article>`).join("")}</div>`;
+    <div class="group-label">External providers</div>
+    <p class="unavailable">Register an OpenAI-style tool provider with
+      <code>atlas providers register ID manifest.json</code>. Registered tools appear here automatically.</p>`;
 
   $("#workspace-body").querySelectorAll("[data-configure]").forEach((button) => {
     if (button.dataset.configure) button.onclick = () => configureTool(button.dataset.configure);

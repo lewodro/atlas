@@ -14,12 +14,17 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 import artifacts
 import fstools
 import goals
 import netguard
+import codetools
+import githubtools
+import imagetools
 import orchestrator
+import providers
 import registry
 import research
 import skills
@@ -149,6 +154,39 @@ def main() -> int:
     orch.add_argument("--workspace", default="", help="target project folder")
     orch.add_argument("--no-synthesis", action="store_true")
 
+    gh = sub.add_parser("github", help="read-only GitHub queries")
+    gh_sub = gh.add_subparsers(dest="action", required=True)
+    for action in ("issues", "prs", "repo"):
+        item = gh_sub.add_parser(action)
+        item.add_argument("repo", nargs="?", default="")
+        if action != "repo":
+            item.add_argument("--state", default="open")
+            item.add_argument("--limit", type=int, default=5)
+
+    img = sub.add_parser("image", help="local SVG image tools")
+    img_sub = img.add_subparsers(dest="action", required=True)
+    gen = img_sub.add_parser("generate")
+    gen.add_argument("prompt", nargs="+")
+    gen.add_argument("--path", default="images/atlas-image.svg")
+    gen.add_argument("--title", default="")
+    edit = img_sub.add_parser("edit")
+    edit.add_argument("path")
+    edit.add_argument("--background", default="")
+    edit.add_argument("--caption", default="")
+    edit.add_argument("--scale", type=float, default=0)
+
+    code = sub.add_parser("code", help="restricted Python execution")
+    code.add_argument("source", nargs="?", help="Python code; omit to read stdin")
+
+    prov = sub.add_parser("providers", help="external tool providers")
+    prov_sub = prov.add_subparsers(dest="action", required=True)
+    prov_sub.add_parser("list")
+    preg = prov_sub.add_parser("register")
+    preg.add_argument("id")
+    preg.add_argument("manifest")
+    prem = prov_sub.add_parser("remove")
+    prem.add_argument("id")
+
     sub.add_parser("workspace", help="show workspace and Git context")
 
     net = sub.add_parser("net", help="web search and fetch")
@@ -184,6 +222,54 @@ def main() -> int:
                 argv += [args.id, "--port", str(args.port)]
             with patch_sys_argv(argv):
                 orchestrator.main()
+            return 0
+
+        if args.group == "github":
+            payload = {"repo": args.repo}
+            if args.action != "repo":
+                payload.update({"state": args.state, "limit": args.limit})
+            result = registry.run(
+                {"issues": "github_issues", "prs": "github_prs", "repo": "github_repo"}[args.action],
+                payload, approved=True,
+            )
+            print(registry.content(result))
+            return 0 if result["ok"] else 1
+
+        if args.group == "image":
+            if args.action == "generate":
+                result = registry.run("image_generate", {
+                    "prompt": " ".join(args.prompt), "path": args.path,
+                    "title": args.title,
+                }, approved=True)
+            else:
+                payload = {"path": args.path}
+                for key in ("background", "caption", "scale"):
+                    value = getattr(args, key)
+                    if value:
+                        payload[key] = value
+                result = registry.run("image_edit", payload, approved=True)
+            print(registry.content(result))
+            return 0 if result["ok"] else 1
+
+        if args.group == "code":
+            source = args.source if args.source is not None else sys.stdin.read()
+            result = registry.run("code_execute", {"code": source}, approved=True)
+            print(registry.content(result))
+            return 0 if result["ok"] else 1
+
+        if args.group == "providers":
+            if args.action == "register":
+                data = json.loads(Path(args.manifest).read_text())
+                row = providers.register(args.id, data.get("name", ""),
+                                         data.get("base_url", ""), data.get("tools", []))
+                print(f"registered {row['id']} ({len(row['tools'])} tools)")
+            elif args.action == "remove":
+                print("removed" if providers.remove(args.id) else "no such provider")
+            else:
+                for row in providers.list_providers():
+                    print(f"{row['id']:18} {row['base_url']:32} {len(row['tools'])} tools")
+                if not providers.list_providers():
+                    print("no providers registered")
             return 0
 
         if args.group == "workers":

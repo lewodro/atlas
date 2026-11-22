@@ -19,10 +19,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+import codetools
 import config
 import fstools
+import githubtools
 import gittools
+import imagetools
 import mathtools
+import providers
 import research
 import skills
 import termtools
@@ -232,6 +236,30 @@ def _web_fetch(args: dict) -> str:
     return webtools.fetch_page(args.get("url", ""))
 
 
+def _github_issues(args: dict) -> str:
+    return githubtools.issues(args)
+
+
+def _github_pulls(args: dict) -> str:
+    return githubtools.pulls(args)
+
+
+def _github_repo(args: dict) -> str:
+    return githubtools.repo_info(args)
+
+
+def _image_generate(args: dict) -> dict:
+    return imagetools.generate(args)
+
+
+def _image_edit(args: dict) -> dict:
+    return imagetools.edit(args)
+
+
+def _code_execute(args: dict) -> str:
+    return codetools.execute(args.get("code", ""))
+
+
 def _plot(args: dict) -> str:
     if args.get("eval_at") is not None:
         return mathtools.evaluate(args.get("expression", ""), float(args["eval_at"]))
@@ -341,6 +369,61 @@ def register_builtins() -> None:
         handler=_recent_research, category="web", provider="atlas",
     ))
     register(ToolSpec(
+        id="github_issues",
+        description="List open issues in an allowlisted GitHub repository (read-only).",
+        parameters={"type": "object", "properties": {
+            "repo": {"type": "string", "description": "owner/name"},
+            "state": {"type": "string", "enum": ["open", "closed", "all"]},
+            "limit": {"type": "integer"}}},
+        handler=_github_issues, category="github", provider="atlas",
+        available=githubtools.available,
+    ))
+    register(ToolSpec(
+        id="github_prs",
+        description="List pull requests in an allowlisted GitHub repository (read-only).",
+        parameters={"type": "object", "properties": {
+            "repo": {"type": "string"},
+            "state": {"type": "string", "enum": ["open", "closed", "all"]},
+            "limit": {"type": "integer"}}},
+        handler=_github_pulls, category="github", provider="atlas",
+        available=githubtools.available,
+    ))
+    register(ToolSpec(
+        id="github_repo",
+        description="Show basic info about an allowlisted GitHub repository.",
+        parameters={"type": "object", "properties": {"repo": {"type": "string"}}},
+        handler=_github_repo, category="github", provider="atlas",
+        available=githubtools.available,
+    ))
+    register(ToolSpec(
+        id="image_generate",
+        description="Generate a local SVG image in the workspace from a prompt. Writes need approval.",
+        parameters={"type": "object", "properties": {
+            "prompt": {"type": "string"}, "path": {"type": "string"},
+            "title": {"type": "string"}}, "required": ["prompt"]},
+        handler=_image_generate, category="image", provider="atlas",
+        permission="ASK",
+    ))
+    register(ToolSpec(
+        id="image_edit",
+        description="Edit an existing SVG image: background, caption or scale. Writes need approval.",
+        parameters={"type": "object", "properties": {
+            "path": {"type": "string"}, "background": {"type": "string"},
+            "caption": {"type": "string"}, "scale": {"type": "number"}},
+            "required": ["path"]},
+        handler=_image_edit, category="image", provider="atlas",
+        permission="ASK",
+    ))
+    register(ToolSpec(
+        id="code_execute",
+        description="Run Python code in a restricted sandbox inside the workspace. Needs approval.",
+        parameters={"type": "object", "properties": {
+            "code": {"type": "string", "description": "Python source"}},
+            "required": ["code"]},
+        handler=_code_execute, category="execution", provider="atlas",
+        permission="ASK", available=codetools.available,
+    ))
+    register(ToolSpec(
         id="plot_function",
         description="Draw a text plot of a math function, e.g. x**2 or sin(x). Safe expression parser, no code execution.",
         parameters={"type": "object", "properties": {
@@ -395,6 +478,8 @@ def register_builtins() -> None:
         permission="ASK",
         available=lambda: not gittools.is_repo() and fstools.status()["available"],
     ))
+    for spec in providers.build_specs(ToolSpec):
+        register(spec)
     register(ToolSpec(
         id="git_status",
         description="Show current branch and changed files in the workspace repository.",
