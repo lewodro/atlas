@@ -26,6 +26,7 @@ const state = {
   controller: null,
   filter: "",
   selected: new Set(),
+  bulkMode: false,
   memories: [],
   categories: [],
   view: "chat",
@@ -248,9 +249,14 @@ function renderSessions() {
   const list = state.sessions.filter((s) =>
     !q || s.title.toLowerCase().includes(q) || s.mode.includes(q));
 
-  $("#bulk-bar").hidden = !state.sessions.length;
-  $("#bulk-all").checked = list.length > 0 && list.every((s) => state.selected.has(s.id));
+  $("#bulk-bar").hidden = !state.bulkMode || !state.sessions.length;
+  $(".chats-head .section-label").hidden = state.bulkMode;
+  $("#bulk-toggle").hidden = state.bulkMode;
+  $("#bulk-all").textContent =
+    list.length && list.every((s) => state.selected.has(s.id))
+      ? "Deselect all" : "Select all";
   $("#bulk-count").textContent = state.selected.size;
+  $("#bulk-delete").disabled = state.selected.size === 0;
 
   box.innerHTML = "";
   if (!list.length) {
@@ -259,24 +265,30 @@ function renderSessions() {
   }
   for (const s of list) {
     const row = document.createElement("div");
-    row.className = "chat-row" + (s.id === state.current ? " active" : "");
-    const checked = state.selected.has(s.id) ? " checked" : "";
+    const selected = state.selected.has(s.id);
+    row.className = "chat-row"
+      + (s.id === state.current && !state.bulkMode ? " active" : "")
+      + (selected ? " selected" : "");
     row.innerHTML = `
-      <input type="checkbox" class="pick" ${checked} title="Select chat" />
       <span class="name">${esc(s.title)}</span>
-      <span class="meta">${ago(s.updated)}</span>
+      <span class="meta">${selected ? "selected" : ago(s.updated)}</span>
       <button class="kill" title="Delete chat">${icon("close")}</button>`;
     row.onclick = (e) => {
-      if (e.target.closest(".pick, .kill")) return;
+      if (e.target.closest(".kill")) return;
+      if (state.bulkMode) {
+        if (selected) state.selected.delete(s.id);
+        else state.selected.add(s.id);
+        renderSessions();
+        return;
+      }
       openSession(s.id); $("#sidebar").classList.remove("open");
     };
-    row.querySelector(".pick").onchange = (e) => {
-      if (e.target.checked) state.selected.add(s.id);
-      else state.selected.delete(s.id);
-      renderSessions();
+    row.querySelector(".name").ondblclick = () => {
+      if (!state.bulkMode) renameSession(s);
     };
-    row.querySelector(".name").ondblclick = () => renameSession(s);
-    row.querySelector(".kill").onclick = (e) => { e.stopPropagation(); removeSession(s); };
+    row.querySelector(".kill").onclick = (e) => {
+      e.stopPropagation(); removeSession(s);
+    };
     box.appendChild(row);
   }
 }
@@ -1466,6 +1478,7 @@ function deleteSelected() {
     body: JSON.stringify({ ids, current: state.current }),
   }).then(async (result) => {
     state.selected.clear();
+    state.bulkMode = false;
     await refreshSessions();
     await refreshStats();
     if (result.deleted.includes(state.current)) {
@@ -1476,13 +1489,22 @@ function deleteSelected() {
   }).catch((err) => alert(err.message));
 }
 
-$("#bulk-all").onchange = (e) => {
+function setBulkMode(on) {
+  state.bulkMode = on;
+  if (!on) state.selected.clear();
+  renderSessions();
+}
+
+$("#bulk-toggle").onclick = () => setBulkMode(true);
+$("#bulk-cancel").onclick = () => setBulkMode(false);
+$("#bulk-all").onclick = () => {
   const q = state.filter.toLowerCase();
   const list = state.sessions.filter((s) =>
     !q || s.title.toLowerCase().includes(q) || s.mode.includes(q));
+  const all = list.length > 0 && list.every((s) => state.selected.has(s.id));
   list.forEach((s) => {
-    if (e.target.checked) state.selected.add(s.id);
-    else state.selected.delete(s.id);
+    if (all) state.selected.delete(s.id);
+    else state.selected.add(s.id);
   });
   renderSessions();
 };
@@ -1491,6 +1513,7 @@ $("#bulk-delete").onclick = deleteSelected;
 $("#filter").oninput = (e) => { state.filter = e.target.value; renderSessions(); };
 
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && state.bulkMode) { setBulkMode(false); return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     e.preventDefault(); setView("chat"); newChat();
   }
@@ -1587,6 +1610,7 @@ document.addEventListener("keydown", (e) => {
   if (location.hash === "#usage") setView("usage");
   if (location.hash === "#memory") setView("memory");
   if (location.hash === "#workers") setView("workers");
+  if (new URLSearchParams(location.search).has("bulk")) setBulkMode(true);
 
   const intro = $("#intro");
   if (intro && !new URLSearchParams(location.search).has("nointro")) {

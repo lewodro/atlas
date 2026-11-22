@@ -238,10 +238,6 @@ svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; s
 }
 .chat-row:hover { background: var(--surface-hover); color: var(--text); }
 .chat-row.active { background: var(--surface-active); color: var(--text); }
-.chat-row.active::before {
-  content: ""; position: absolute; left: 3px; top: 10px; bottom: 10px;
-  width: 2px; border-radius: 2px; background: var(--accent);
-}
 .chat-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
 .chat-row .meta { font: 10px var(--mono); color: var(--text-faint); }
 .chat-row .kill {
@@ -921,23 +917,39 @@ dialog#configure { width: min(760px, 94vw); }
 
 /* ------------------------------------------------------ bulk chat select */
 
+.chats-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px 2px; min-height: 26px;
+}
+.chats-head .section-label { padding: 0; }
+.chat-edit {
+  display: grid; place-items: center;
+  width: 22px; height: 22px; margin-left: auto;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--text-faint);
+  opacity: 0; transition: opacity .14s ease, background .14s ease;
+}
+.chats-block:hover .chat-edit,
+.chat-edit:focus-visible { opacity: 1; }
+.chat-edit:hover { background: var(--surface-hover); color: var(--text); }
+.chat-edit svg { width: 13px; height: 13px; }
+
 .bulk-bar {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 9px; margin-bottom: 2px;
-  border: 1px solid var(--border-soft); border-radius: 8px;
-  background: var(--surface); font-size: 11px; color: var(--text-muted);
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; font-size: 11px; color: var(--text-muted);
 }
 .bulk-bar[hidden] { display: none; }
-.bulk-all { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-.bulk-all input, .chat-row .pick { accent-color: var(--accent); cursor: pointer; margin: 0; }
+.bulk-bar .text-btn { padding: 3px 7px; font-size: 10.5px; }
 #bulk-count { margin-left: auto; font: 10px var(--mono); color: var(--text-faint); }
-#bulk-delete {
-  padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--surface-2); color: var(--danger); font-size: 10.5px;
+#bulk-delete, #bulk-cancel {
+  padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface-2); font-size: 10.5px;
 }
-#bulk-delete:disabled { opacity: .4; }
-.chat-row { grid-template-columns: auto 1fr auto auto; }
-.chat-row .pick { width: 13px; height: 13px; flex: none; }
+#bulk-delete { color: var(--danger); }
+#bulk-delete:disabled { opacity: .35; }
+#bulk-cancel { color: var(--text-muted); }
+.chat-row.selected { background: var(--surface-active); color: var(--text); }
+.chat-row.selected .meta { color: var(--accent); }
 
 /* ------------------------------------------------------------ ATLAS intro */
 
