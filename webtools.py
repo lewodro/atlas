@@ -134,32 +134,56 @@ def format_search(query: str, limit: int = 5) -> str:
 class _TextParser(HTMLParser):
     SKIP = {"script", "style", "noscript", "svg", "template"}
 
+    CONTENT = {"article", "main", "body"}
+
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.title: list[str] = []
         self.text: list[str] = []
+        self.article_text: list[str] = []
         self._skip = 0
         self._in_title = False
+        self._content_depth = 0
+        self._article_depth = 0
 
     def handle_starttag(self, tag, attrs):
         if tag in self.SKIP:
             self._skip += 1
         elif tag == "title" and self._skip == 0:
             self._in_title = True
+        elif tag in ("article", "main"):
+            self._article_depth += 1
+            self._content_depth += 1
+        elif tag == "body":
+            self._content_depth += 1
 
     def handle_endtag(self, tag):
         if tag in self.SKIP and self._skip:
             self._skip -= 1
         elif tag == "title":
             self._in_title = False
+        elif tag in ("article", "main"):
+            self._article_depth = max(0, self._article_depth - 1)
+            self._content_depth = max(0, self._content_depth - 1)
+        elif tag == "body":
+            self._content_depth = max(0, self._content_depth - 1)
 
     def handle_data(self, data):
+        if self._in_title and not self._skip:
+            self.title.append(data.strip())
+            return
         if self._skip:
             return
         value = data.strip()
         if not value:
             return
-        (self.title if self._in_title else self.text).append(value)
+        # Prefer article text when present; otherwise accept body text.
+        if self._article_depth:
+            self.article_text.append(value)
+        elif self._content_depth:
+            self.text.append(value)
+        elif not self.text:
+            self.text.append(value)
 
 
 def fetch_page(url: str, limit_chars: int = MAX_CHARS) -> str:
@@ -168,7 +192,7 @@ def fetch_page(url: str, limit_chars: int = MAX_CHARS) -> str:
     parser = _TextParser()
     parser.feed(response.text)
     title = " ".join(parser.title)[:180] or "(no title)"
-    body = "\n".join(parser.text)
+    body = "\n".join(parser.article_text or parser.text)
     body = " ".join(body.split())[: max(200, min(int(limit_chars), 20000))]
     return (
         f"Fetched: {response.url}\nTitle: {title}\n"

@@ -16,6 +16,7 @@
 [![Agent](https://img.shields.io/badge/agent-unified-22d3a6)]()
 [![Orchestrator](https://img.shields.io/badge/orchestrator-roles%20%26%20instances-6f42c1)]()
 [![Study](https://img.shields.io/badge/study-notes%20%26%20math-22d3a6)]()
+[![Workers](https://img.shields.io/badge/workers-multi%20local%20agent-6f42c1)]()
 
 ```
 you> I'm a first-year CS student, 8 GB M1, learning Python and C.
@@ -226,6 +227,7 @@ Three tools are live in chat and on the CLI. See **[docs/tools.md](docs/tools.md
 | Tool | What it does | CLI |
 |---|---|---|
 | Web search | DuckDuckGo results, no key (Brave optional) | `atlas net search "query"` |
+| Recent research | Dated multi-source research with real URLs | `atlas research "topic" --category finance` |
 | Web fetch | Readable text from a public page, with source URL | `atlas net fetch https://…` |
 | Files | Read / write / list / mkdir / move / delete in the workspace | `atlas fs read path` |
 | Terminal | Allowlisted `ls`, `git status`, `git log`, … | `atlas term ls` |
@@ -237,6 +239,8 @@ Network calls are pinned to public IPs with SSRF checks on every redirect. Files
 atlas tools                              # status of every tool
 atlas tools configure --workspace ~/dev/project
 atlas net search "Python lists tutorial" --limit 3
+atlas research "stock market" --category finance --days 60
+atlas research "game releases" --category gaming --days 60
 atlas net fetch https://example.com
 atlas term git status --short
 atlas fm write notes/hello.txt --text hello
@@ -317,6 +321,25 @@ atlas goal set "inspect the repo and summarize the last commit"
 atlas goal status
 atlas goal clear
 ```
+
+---
+
+## Local workers / orchestration
+
+Run several isolated local Atlas agents in parallel, each with its own model,
+workspace and memory. The main model combines their reports into one answer.
+
+```bash
+atlas workers create Research --workspace ~/devAI/AtlasWSPC --model qwen2.5:3b --role research
+atlas workers create Engineer --workspace /tmp/project --model qwen-local:latest --role engineer
+atlas workers start <id>
+atlas orchestrate "research recent releases and compare with the local project"
+atlas workers stop <id>
+```
+
+The **Workers** page in the GUI does the same thing with start/stop buttons and
+a streaming goal runner. Everything is local and open-source — no cloud
+orchestration service, no accounts, no billing.
 
 ---
 

@@ -53,6 +53,23 @@ Nothing outside the configured workspace is reachable. Refused:
 Only `read`, `write` and `list` exist. There is no delete, move, glob or shell
 primitive. Writes are atomic and inherit the existing file mode.
 
+## Recent research
+
+`recent_research` runs several dated queries in parallel, fetches the top
+pages and returns a digest with real URLs. Categories: `finance`, `news`,
+`gaming`, `ai`, `general`. Default window is 60 days; results are cached for
+six hours in gitignored `data/research.json`.
+
+```bash
+atlas research "stock market" --category finance --days 60
+atlas research "game releases" --category gaming
+atlas research "AI models" --category ai --json
+```
+
+The `recent-events` skill teaches the agent to use this tool, answer briefly,
+name sources and never invent headlines. Every URL is re-checked against the
+SSRF guard before it enters the digest.
+
 ## One file tool
 
 `filesystem` and `file_manager` were two overlapping tools. They are now one

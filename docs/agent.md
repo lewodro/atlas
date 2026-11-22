@@ -22,6 +22,35 @@ can keep the objective in view. Tool rounds are capped, permissions still apply,
 and the loop emits real `goal` events to the UI. CLI equivalents:
 `atlas goal set "..."`, `atlas goal status`, `atlas goal clear`.
 
+## Local workers and orchestration
+
+A worker is a separate Atlas server process with its own model, workspace,
+SQLite memory, notes folder and port. It runs the same server code, so all
+security rules (SSRF guard, workspace confinement, permissions) still apply.
+
+```bash
+atlas workers create Research --workspace ~/devAI/AtlasWSPC \
+  --model qwen2.5:3b --role research
+atlas workers create Engineer --workspace /tmp/project \
+  --model qwen-local:latest --role engineer
+atlas workers start <id>
+atlas workers ask <id> "inspect this repo"
+atlas orchestrate "research game releases and compare with the local demo"
+atlas workers stop <id>
+```
+
+`dispatch.py` runs workers in parallel (bounded to six), gives each a role-
+specific task, and asks the main local model to synthesize their reports. It
+never invents a source: worker failures are reported as failures. An empty
+tool turn is recovered with one final text-only answer so small models do not
+return "(no answer)" after using tools.
+
+Workers are local processes only. There is no cloud coordinator, no account and
+no billing. An OpenAI-compatible endpoint can be supplied with `--base-url`,
+so other local runtimes (or a self-hosted OpenAI-compatible service) can be
+registered as workers without changing the core loop. The Workers page in the
+GUI lists, starts and stops workers and runs goals with streaming output.
+
 ## Why one file tool
 
 Early Atlas had `filesystem` (read/write/list) and `file_manager` (write/mkdir/

@@ -28,6 +28,7 @@ import threading
 import time
 import webbrowser
 import traceback
+import queue
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -40,10 +41,12 @@ import goals
 import librarian
 import memory
 import models
+import dispatch
 import modes
 import orchestrator
 import profiles
 import registry
+import workers
 import skills
 import workspace
 from config import FRONTIER_READY, MODEL, WHERE
@@ -164,6 +167,13 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
         system += "\n\n" + goal_block
     messages: list[dict] = [{"role": "system", "content": system}]
     messages += history
+
+    # Small models try terminal `mkdir` even though only files supports it.
+    low = clean.lower()
+    if any(word in low for word in ("mkdir", "create a folder", "make a folder", "new folder")):
+        clean += "\n(Use the files tool with action mkdir — the terminal cannot create folders.)"
+    if any(word in low for word in ("write a file", "write notes", "save a file")):
+        clean += "\n(Use the files tool with action write and a full file path.)"
     messages.append({"role": "user", "content": clean})
     memory.log_turn("user", user_text, mode, session_id)
 
@@ -292,7 +302,20 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                 answer_parts.append(msg.content)
                 yield ("delta", {"text": msg.content})
 
-        answer = "".join(answer_parts).strip() or "(no answer)"
+        answer = "".join(answer_parts).strip()
+        if not answer:
+            # Small models can spend every round on tools and return no prose.
+            # Force one final text-only answer grounded in the tool results.
+            from llm import chat as plain
+            followup = list(messages) + [{
+                "role": "user",
+                "content": "Answer directly in a few sentences using only the tool results above. No tools.",
+            }]
+            msg = plain(followup, None, model=model)
+            answer = (msg.content or "").strip()
+            if answer:
+                yield ("delta", {"text": answer})
+        answer = answer or "(no answer)"
         active_goal = goals.current()
         if active_goal:
             if "GOAL COMPLETE" in answer.upper():
@@ -404,6 +427,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(models.describe())
             if path == "/api/goal":
                 return self._json({"goal": goals.current()})
+            if path == "/api/workers":
+                return self._json({"workers": workers.list_workers()})
             if path == "/api/tools":
                 return self._json({"tools": registry.metadata()})
             if path == "/api/tools/activity":
@@ -525,6 +550,55 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True})
                 return self._json({"goal": goals.current()})
 
+            if path == "/api/workers":
+                try:
+                    row = workers.create(
+                        body.get("label", ""), body.get("workspace", ""),
+                        body.get("model", ""), body.get("role", "general"),
+                        body.get("base_url", ""), int(body.get("port") or 0),
+                    )
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 400)
+                return self._json({"worker": row}, 201)
+            if path.startswith("/api/workers/"):
+                parts = path.split("/")
+                wid = unquote(parts[3])
+                action = parts[4] if len(parts) > 4 else "ask"
+                try:
+                    if action == "start":
+                        return self._json({"worker": workers.start(wid)})
+                    if action == "stop":
+                        return self._json({"ok": workers.stop(wid)})
+                    if action == "remove":
+                        return self._json({"ok": workers.remove(wid)})
+                    return self._json(workers.ask(wid, body.get("message", "")))
+                except (ValueError, RuntimeError, TimeoutError) as exc:
+                    return self._json({"error": str(exc)}, 400)
+            if path == "/api/orchestrate":
+                goal = (body.get("goal") or "").strip()
+                if not goal:
+                    return self._json({"error": "goal is empty"}, 400)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self._sse("stage", {"message": "Starting local workers"})
+                box: queue.Queue = queue.Queue()
+                def run():
+                    try:
+                        box.put(("done", dispatch.orchestrate(
+                            goal, body.get("workers"), synthesize=True)))
+                    except Exception as exc:
+                        box.put(("error", {"message": str(exc)}))
+                threading.Thread(target=run, daemon=True).start()
+                try:
+                    event, data = box.get(timeout=600)
+                    self._sse(event, data)
+                except queue.Empty:
+                    self._sse("error", {"message": "orchestration timed out"})
+                return
+
             if path == "/api/tools/permission":
                 ok = decide_permission(body.get("token", ""), body.get("allow") is True)
                 return self._json({"ok": ok})
@@ -548,6 +622,25 @@ class Handler(BaseHTTPRequestHandler):
                     model=body.get("model", ""),
                 )
                 return self._json({"ok": True, **models.describe(), "saved": saved})
+
+            if path == "/api/sessions/delete":
+                ids = body.get("ids") or []
+                if not isinstance(ids, list):
+                    return self._json({"error": "ids must be a list"}, 400)
+                deleted, failed = [], []
+                for sid in ids[:500]:
+                    sid = str(sid)
+                    if sid in (memory.CLI_SESSION, memory.cli_session()):
+                        failed.append(sid)
+                        continue
+                    try:
+                        memory.delete_session(sid)
+                        deleted.append(sid)
+                    except (ValueError, Exception):
+                        failed.append(sid)
+                if deleted and body.get("current") in deleted:
+                    pass
+                return self._json({"deleted": deleted, "failed": failed})
 
             if path == "/api/sessions":
                 mode = modes.canonical(body.get("mode") or "")

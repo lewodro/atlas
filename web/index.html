@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Atlas</title>
 <link rel="icon" href="data:," />
+<script>if(new URLSearchParams(location.search).has("nointro"))document.documentElement.classList.add("no-intro")</script>
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body data-view="chat">
@@ -38,6 +39,10 @@
   <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M6.5 8h11v3a5.5 5.5 0 0 1-11 0V8ZM12 16.5V21"/></symbol>
 </svg>
 
+<div id="intro" class="intro">
+  <span class="intro-mark">ATLAS</span>
+</div>
+
 <div id="app">
 
   <aside id="sidebar">
@@ -48,6 +53,12 @@
       </div>
 
       <button id="new-chat" class="new-chat"><svg><use href="#i-plus"/></svg><span>New chat</span><kbd>⌘K</kbd></button>
+
+      <div class="bulk-bar" id="bulk-bar" hidden>
+        <label class="bulk-all"><input type="checkbox" id="bulk-all" /> Select all</label>
+        <span id="bulk-count">0</span>
+        <button type="button" id="bulk-delete" title="Delete selected chats">Delete</button>
+      </div>
 
       <label class="search-field">
         <svg><use href="#i-search"/></svg>
@@ -60,6 +71,7 @@
       <button class="nav-item" data-view="skills"><svg><use href="#i-spark"/></svg><span>Skills</span></button>
       <button class="nav-item" data-view="artifacts"><svg><use href="#i-artifacts"/></svg><span>Artifacts</span></button>
       <button class="nav-item" data-view="usage"><svg><use href="#i-pulse"/></svg><span>Usage</span></button>
+      <button class="nav-item" data-view="workers"><svg><use href="#i-plug"/></svg><span>Workers</span></button>
       <button class="nav-item" data-view="memory"><svg><use href="#i-memory"/></svg><span>Memory</span></button>
     </nav>
 
