@@ -8,6 +8,7 @@ No cloud service, no account, no external coordinator.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import llm
@@ -30,13 +31,24 @@ Combine their reports into one clear answer in under 250 words.
 
 
 def orchestrate(goal: str, worker_ids: list[str] | None = None,
-                synthesize: bool = True, timeout: int = 240) -> dict:
+                synthesize: bool = True, timeout: int = 240,
+                workspace: str = "") -> dict:
     goal = str(goal or "").strip()
     if not goal:
         raise ValueError("goal is empty")
 
     available = {row["id"]: row for row in workers.list_workers()}
     ids = worker_ids or list(available)
+
+    # A goal can target a project. Prefer workers already scoped to it; if
+    # none are, send all workers with an explicit workspace instruction.
+    workspace = str(workspace or "").strip()
+    if workspace:
+        target = str(Path(workspace).expanduser().resolve())
+        matching = [wid for wid in ids
+                    if str(Path(available[wid]["workspace"]).expanduser().resolve()) == target]
+        if matching:
+            ids = matching
     if not ids:
         raise ValueError("no workers configured — create one with: atlas workers create NAME --workspace PATH")
     unknown = [wid for wid in ids if wid not in available]
@@ -53,7 +65,10 @@ def orchestrate(goal: str, worker_ids: list[str] | None = None,
     for wid in ids:
         row = available[wid]
         template = ROLE_TASK.get(row["role"], ROLE_TASK["general"])
-        tasks[wid] = template.format(goal=goal)
+        task = template.format(goal=goal)
+        if workspace:
+            task += f"\nWork only in this workspace: {workspace}"
+        tasks[wid] = task
 
     reports: list[dict] = []
     with ThreadPoolExecutor(max_workers=len(ids)) as pool:
@@ -88,6 +103,7 @@ def orchestrate(goal: str, worker_ids: list[str] | None = None,
 
     return {
         "goal": goal,
+        "workspace": workspace or None,
         "workers": [r["worker"] for r in reports],
         "reports": reports,
         "answer": answer,

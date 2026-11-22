@@ -146,6 +146,7 @@ def main() -> int:
     orch = sub.add_parser("orchestrate", help="run a goal across local workers")
     orch.add_argument("goal", nargs="+")
     orch.add_argument("--workers", nargs="*", default=None)
+    orch.add_argument("--workspace", default="", help="target project folder")
     orch.add_argument("--no-synthesis", action="store_true")
 
     sub.add_parser("workspace", help="show workspace and Git context")
@@ -206,6 +207,7 @@ def main() -> int:
         if args.group == "orchestrate":
             result = dispatch.orchestrate(
                 " ".join(args.goal), args.workers,
+                workspace=args.workspace,
                 synthesize=not args.no_synthesis,
             )
             print(result["answer"] or json.dumps(result, indent=2, ensure_ascii=False))

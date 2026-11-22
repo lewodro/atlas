@@ -578,25 +578,45 @@ class Handler(BaseHTTPRequestHandler):
                 goal = (body.get("goal") or "").strip()
                 if not goal:
                     return self._json({"error": "goal is empty"}, 400)
+
+                # Every goal run is its own chat, separate from normal chats
+                # and from other goal runs. Long-term memory is unaffected.
+                session_id = memory.create_session(
+                    mode="agent", title=goal[:70], model=None,
+                )
+                memory.log_turn("user", goal, "agent", session_id)
+
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
                 self.send_header("Connection", "close")
                 self.end_headers()
-                self._sse("stage", {"message": "Starting local workers"})
+                self._sse("stage", {"message": "Starting local workers",
+                                    "session": session_id})
                 box: queue.Queue = queue.Queue()
+
                 def run():
                     try:
-                        box.put(("done", dispatch.orchestrate(
-                            goal, body.get("workers"), synthesize=True)))
+                        result = dispatch.orchestrate(
+                            goal, body.get("workers"),
+                            workspace=body.get("workspace", ""), synthesize=True,
+                        )
+                        result["session"] = session_id
+                        memory.log_turn("assistant", result.get("answer") or "(no answer)",
+                                        "agent", session_id)
+                        memory.update_session(session_id)
+                        box.put(("done", result))
                     except Exception as exc:
-                        box.put(("error", {"message": str(exc)}))
+                        memory.log_turn("assistant", f"ERROR: {exc}", "agent", session_id)
+                        box.put(("error", {"message": str(exc), "session": session_id}))
+
                 threading.Thread(target=run, daemon=True).start()
                 try:
                     event, data = box.get(timeout=600)
                     self._sse(event, data)
                 except queue.Empty:
-                    self._sse("error", {"message": "orchestration timed out"})
+                    self._sse("error", {"message": "orchestration timed out",
+                                        "session": session_id})
                 return
 
             if path == "/api/tools/permission":
