@@ -333,13 +333,18 @@ workspace and memory. The main model combines their reports into one answer.
 atlas workers create Research --workspace ~/devAI/AtlasWSPC --model qwen2.5:3b --role research
 atlas workers create Engineer --workspace /tmp/project --model qwen-local:latest --role engineer
 atlas workers start <id>
-atlas orchestrate "research recent releases and compare with the local project"
+atlas orchestrate "research recent releases and compare with the local project" \
+  --workspace ~/devAI/AtlasWSPC
 atlas workers stop <id>
 ```
 
 The **Workers** page in the GUI does the same thing with start/stop buttons and
-a streaming goal runner. Everything is local and open-source — no cloud
-orchestration service, no accounts, no billing.
+a streaming goal runner. Pick a project from the dropdown to route the goal to
+workers scoped to that folder, or leave it on **Any project**. Every goal run
+creates its own chat in the sidebar, with the goal as the user message and the
+synthesized report as the answer — so you can keep one chat per research task
+or per project. Everything is local and open-source — no cloud orchestration
+service, no accounts, no billing.
 
 ---
 

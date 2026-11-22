@@ -980,3 +980,6 @@ dialog#configure { width: min(760px, 94vw); }
   border-radius: 9px; outline: none;
 }
 #orch-goal:focus { border-color: var(--accent-line); }
+
+#orch-workspace { max-width: 240px; }
+#orch-workspace .select-trigger { width: 100%; justify-content: space-between; }

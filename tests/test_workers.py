@@ -103,6 +103,30 @@ class Dispatch(unittest.TestCase):
         self.assertEqual(len(result["reports"]), 2)
         self.assertIn("do the thing", result["goal"])
 
+    def test_workspace_filters_workers(self):
+        rows = [
+            {"id": "w1", "label": "Research", "role": "research", "model": "a",
+             "port": 1, "workspace": "/tmp/project-a"},
+            {"id": "w2", "label": "Engineer", "role": "engineer", "model": "b",
+             "port": 2, "workspace": "/tmp/project-b"},
+        ]
+        seen = []
+
+        class Message:
+            content = "ok"
+
+        with patch.object(dispatch.workers, "list_workers", return_value=rows), \
+             patch.object(dispatch.workers, "healthy", return_value=True), \
+             patch.object(dispatch.workers, "ask",
+                          side_effect=lambda wid, text: seen.append((wid, text)) or {
+                              "worker": wid, "label": wid, "role": "research",
+                              "model": "a", "answer": "x", "tools": []}), \
+             patch.object(dispatch.llm, "chat", return_value=Message()):
+            result = dispatch.orchestrate("goal", workspace="/tmp/project-a")
+        self.assertEqual(result["workers"], ["w1"])
+        self.assertEqual(len(seen), 1)
+        self.assertIn("/tmp/project-a", seen[0][1])
+
     def test_empty_goal_refused(self):
         with self.assertRaises(ValueError):
             dispatch.orchestrate("")

@@ -908,8 +908,14 @@ function renderWorkers() {
     <div class="card-grid">${rows || '<p class="unavailable">No workers. Create one with: atlas workers create NAME --workspace PATH</p>'}</div>
     <div class="group-label">Orchestrate a goal</div>
     <div class="card">
-      <p class="panel-copy">Each worker uses its own local model, workspace and memory. The main model combines their reports.</p>
-      <textarea id="orch-goal" rows="3" placeholder="Goal for the workers…" spellcheck="false"></textarea>
+      <p class="panel-copy">Each worker uses its own local model, workspace and memory. The main model combines their reports. Every run creates its own chat.</p>
+      <div class="select" id="orch-workspace">
+        <button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false">
+          <span class="select-value">Any project</span><svg class="chev"><use href="#i-chevron"/></svg>
+        </button>
+        <div class="select-menu" role="listbox" hidden></div>
+      </div>
+      <textarea id="orch-goal" rows="3" placeholder="e.g. definitive research on Claude Fable 5.2 and latest model updates" spellcheck="false"></textarea>
       <div class="card-foot"><button class="text-btn" id="orch-run">Run goal</button></div>
       <pre id="orch-result" class="skill-body" hidden></pre>
     </div>`;
@@ -922,6 +928,13 @@ function renderWorkers() {
       await refreshWorkers();
     };
   });
+  const paths = [...new Set(state.workers.map((w) => w.workspace))];
+  selects.orchWorkspace = makeSelect($("#orch-workspace"), { placeholder: "Any project" });
+  selects.orchWorkspace.setOptions([
+    { value: "", label: "Any project", meta: "all workers" },
+    ...paths.map((path) => ({ value: path, label: path.split("/").pop(), meta: "project" })),
+  ]);
+
   $("#orch-run").onclick = async () => {
     const goal = $("#orch-goal").value.trim();
     if (!goal) return;
@@ -931,7 +944,10 @@ function renderWorkers() {
     try {
       const res = await fetch("/api/orchestrate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal }),
+        body: JSON.stringify({
+          goal,
+          workspace: selects.orchWorkspace?.value || "",
+        }),
       });
       const reader = res.body.getReader(), decoder = new TextDecoder();
       let buffer = "";
@@ -945,7 +961,14 @@ function renderWorkers() {
           const event = parseEvent(block);
           if (!event) continue;
           if (event.name === "stage") result.textContent = event.data.message;
-          if (event.name === "done") result.textContent = event.data.answer || JSON.stringify(event.data, null, 2);
+          if (event.name === "done") {
+            result.textContent = event.data.answer || JSON.stringify(event.data, null, 2);
+            await refreshSessions();
+            if (event.data.session) {
+              await openSession(event.data.session);
+              $("#sidebar").classList.remove("open");
+            }
+          }
           if (event.name === "error") result.textContent = event.data.message;
         }
       }
