@@ -38,6 +38,8 @@ case "${1:-}" in
   agents) shift; exec uv run python tools_cli.py agents "$@" ;;
   goal)   shift; exec uv run python tools_cli.py goal "$@" ;;
   research) shift; exec uv run python tools_cli.py research "$@" ;;
+  workers) shift; exec uv run python tools_cli.py workers "$@" ;;
+  orchestrate) shift; exec uv run python tools_cli.py orchestrate "$@" ;;
   workspace) shift; exec uv run python tools_cli.py workspace "$@" ;;
   net)    shift; exec uv run python tools_cli.py net "$@" ;;
   fs)     shift; exec uv run python tools_cli.py fs "$@" ;;

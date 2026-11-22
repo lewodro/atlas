@@ -24,6 +24,8 @@ import registry
 import research
 import skills
 import webtools
+import workers
+import dispatch
 import workspace
 
 WEB_TOOLS = [
@@ -120,6 +122,32 @@ def main() -> int:
     research_cmd.add_argument("--category", default="general",
                               choices=["finance", "news", "gaming", "ai", "general"])
 
+    wrk = sub.add_parser("workers", help="manage isolated local Atlas workers")
+    wrk_sub = wrk.add_subparsers(dest="action", required=True)
+    wrk_sub.add_parser("list")
+    wrk_create = wrk_sub.add_parser("create")
+    wrk_create.add_argument("label")
+    wrk_create.add_argument("--workspace", required=True)
+    wrk_create.add_argument("--model", default="")
+    wrk_create.add_argument("--role", default="general",
+                            choices=sorted(orchestrator.ROLES))
+    wrk_create.add_argument("--base-url", default="")
+    wrk_create.add_argument("--port", type=int, default=0)
+    wrk_start = wrk_sub.add_parser("start")
+    wrk_start.add_argument("id")
+    wrk_stop = wrk_sub.add_parser("stop")
+    wrk_stop.add_argument("id")
+    wrk_remove = wrk_sub.add_parser("remove")
+    wrk_remove.add_argument("id")
+    wrk_ask = wrk_sub.add_parser("ask")
+    wrk_ask.add_argument("id")
+    wrk_ask.add_argument("message", nargs="+")
+
+    orch = sub.add_parser("orchestrate", help="run a goal across local workers")
+    orch.add_argument("goal", nargs="+")
+    orch.add_argument("--workers", nargs="*", default=None)
+    orch.add_argument("--no-synthesis", action="store_true")
+
     sub.add_parser("workspace", help="show workspace and Git context")
 
     net = sub.add_parser("net", help="web search and fetch")
@@ -155,6 +183,32 @@ def main() -> int:
                 argv += [args.id, "--port", str(args.port)]
             with patch_sys_argv(argv):
                 orchestrator.main()
+            return 0
+
+        if args.group == "workers":
+            argv = ["atlas workers", args.action]
+            if args.action == "create":
+                argv += [args.label, "--workspace", args.workspace]
+                for flag, value in (("--model", args.model), ("--role", args.role),
+                                    ("--base-url", args.base_url)):
+                    if value:
+                        argv += [flag, value]
+                if args.port:
+                    argv += ["--port", str(args.port)]
+            elif args.action in ("start", "stop", "remove"):
+                argv += [args.id]
+            elif args.action == "ask":
+                argv += [args.id] + args.message
+            with patch_sys_argv(argv):
+                workers.main()
+            return 0
+
+        if args.group == "orchestrate":
+            result = dispatch.orchestrate(
+                " ".join(args.goal), args.workers,
+                synthesize=not args.no_synthesis,
+            )
+            print(result["answer"] or json.dumps(result, indent=2, ensure_ascii=False))
             return 0
 
         if args.group == "research":

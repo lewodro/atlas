@@ -193,6 +193,7 @@ function setView(name) {
     artifacts: ["Artifacts", "Files and outputs Atlas creates or works on."],
     memory: ["Memory", "What Atlas remembers about you, in plain language."],
     usage: ["Usage", "What Atlas has actually done on this machine."],
+    workers: ["Workers", "Local agents with their own model, workspace and memory."],
   };
   if (titles[name]) {
     $("#workspace-title").textContent = titles[name][0];
@@ -210,6 +211,7 @@ function setView(name) {
   if (name === "artifacts") renderArtifacts();
   if (name === "memory") refreshMemories();
   if (name === "usage") renderUsage();
+  if (name === "workers") refreshWorkers();
   $("#sidebar").classList.remove("open");
 }
 
@@ -878,6 +880,79 @@ function renderArtifacts() {
   renderArtifactList(state.artifacts);
 }
 
+/* ------------------------------------------------------------- workers */
+
+async function refreshWorkers() {
+  try {
+    state.workers = (await api("/api/workers")).workers || [];
+  } catch { state.workers = []; }
+  if (state.view === "workers") renderWorkers();
+}
+
+function renderWorkers() {
+  const rows = state.workers.map((w) => `
+    <article class="card">
+      <div class="card-head">${icon("plug")}<h3>${esc(w.label)}</h3></div>
+      <p>${esc(w.role)} · ${esc(w.model)} · :${w.port}</p>
+      <span class="pill ${w.running ? "" : "quiet"}">${w.running ? "running" : "stopped"}</span>
+      <p>${esc(w.workspace)}</p>
+      <div class="card-foot">
+        <button class="text-btn" data-worker="${esc(w.id)}" data-action="${w.running ? "stop" : "start"}">
+          ${w.running ? "Stop" : "Start"}
+        </button>
+      </div>
+    </article>`).join("");
+
+  $("#workspace-body").innerHTML = `
+    <div class="group-label">Local workers</div>
+    <div class="card-grid">${rows || '<p class="unavailable">No workers. Create one with: atlas workers create NAME --workspace PATH</p>'}</div>
+    <div class="group-label">Orchestrate a goal</div>
+    <div class="card">
+      <p class="panel-copy">Each worker uses its own local model, workspace and memory. The main model combines their reports.</p>
+      <textarea id="orch-goal" rows="3" placeholder="Goal for the workers…" spellcheck="false"></textarea>
+      <div class="card-foot"><button class="text-btn" id="orch-run">Run goal</button></div>
+      <pre id="orch-result" class="skill-body" hidden></pre>
+    </div>`;
+
+  $("#workspace-body").querySelectorAll("[data-worker]").forEach((button) => {
+    button.onclick = async () => {
+      await api(`/api/workers/${button.dataset.worker}/${button.dataset.action}`, {
+        method: "POST", body: "{}",
+      });
+      await refreshWorkers();
+    };
+  });
+  $("#orch-run").onclick = async () => {
+    const goal = $("#orch-goal").value.trim();
+    if (!goal) return;
+    const result = $("#orch-result");
+    result.hidden = false;
+    result.textContent = "Running workers…";
+    try {
+      const res = await fetch("/api/orchestrate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goal }),
+      });
+      const reader = res.body.getReader(), decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let cut;
+        while ((cut = buffer.indexOf("\n\n")) >= 0) {
+          const block = buffer.slice(0, cut); buffer = buffer.slice(cut + 2);
+          const event = parseEvent(block);
+          if (!event) continue;
+          if (event.name === "stage") result.textContent = event.data.message;
+          if (event.name === "done") result.textContent = event.data.answer || JSON.stringify(event.data, null, 2);
+          if (event.name === "error") result.textContent = event.data.message;
+        }
+      }
+    } catch (err) { result.textContent = err.message; }
+  };
+}
+
 /* ------------------------------------------------------- theme + usage */
 
 const THEMES = [
@@ -1206,6 +1281,7 @@ const SLASH_ACTIONS = [
   { id: "memory", label: "Memory", desc: "Open saved memories", icon: "memory" },
   { id: "usage", label: "Usage", desc: "Open local usage", icon: "pulse" },
   { id: "research", label: "Research", desc: "Dated web research with sources", icon: "globe" },
+  { id: "orchestrate", label: "Orchestrate", desc: "Run a goal across local workers", icon: "plug" },
 ];
 
 let slashItems = [];
@@ -1277,6 +1353,11 @@ function chooseSlash(index) {
   const item = slashItems[index];
   if (!item) return;
   const input = $("#input");
+  if (item.id === "orchestrate") {
+    $("#slash-menu").hidden = true;
+    setView("workers");
+    return;
+  }
   if (item.prefix === "/skill:") {
     input.value = `/skill:${item.id} `;
   } else if (item.id === "goal") {
@@ -1471,6 +1552,7 @@ document.addEventListener("keydown", (e) => {
   if (location.hash === "#artifacts") setView("artifacts");
   if (location.hash === "#usage") setView("usage");
   if (location.hash === "#memory") setView("memory");
+  if (location.hash === "#workers") setView("workers");
 
   const intro = $("#intro");
   if (intro && !new URLSearchParams(location.search).has("nointro")) {
