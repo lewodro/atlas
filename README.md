@@ -16,6 +16,7 @@
 [![Agent](https://img.shields.io/badge/agent-unified-22d3a6)]()
 [![Orchestrator](https://img.shields.io/badge/orchestrator-roles%20%26%20instances-6f42c1)]()
 [![Study](https://img.shields.io/badge/study-notes%20%26%20math-22d3a6)]()
+[![Workers](https://img.shields.io/badge/workers-multi%20local%20agent-6f42c1)]()
 
 ```
 you> I'm a first-year CS student, 8 GB M1, learning Python and C.
@@ -320,6 +321,25 @@ atlas goal set "inspect the repo and summarize the last commit"
 atlas goal status
 atlas goal clear
 ```
+
+---
+
+## Local workers / orchestration
+
+Run several isolated local Atlas agents in parallel, each with its own model,
+workspace and memory. The main model combines their reports into one answer.
+
+```bash
+atlas workers create Research --workspace ~/devAI/AtlasWSPC --model qwen2.5:3b --role research
+atlas workers create Engineer --workspace /tmp/project --model qwen-local:latest --role engineer
+atlas workers start <id>
+atlas orchestrate "research recent releases and compare with the local project"
+atlas workers stop <id>
+```
+
+The **Workers** page in the GUI does the same thing with start/stop buttons and
+a streaming goal runner. Everything is local and open-source — no cloud
+orchestration service, no accounts, no billing.
 
 ---
 
