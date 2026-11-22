@@ -226,6 +226,7 @@ Three tools are live in chat and on the CLI. See **[docs/tools.md](docs/tools.md
 | Tool | What it does | CLI |
 |---|---|---|
 | Web search | DuckDuckGo results, no key (Brave optional) | `atlas net search "query"` |
+| Recent research | Dated multi-source research with real URLs | `atlas research "topic" --category finance` |
 | Web fetch | Readable text from a public page, with source URL | `atlas net fetch https://…` |
 | Files | Read / write / list / mkdir / move / delete in the workspace | `atlas fs read path` |
 | Terminal | Allowlisted `ls`, `git status`, `git log`, … | `atlas term ls` |
@@ -237,6 +238,8 @@ Network calls are pinned to public IPs with SSRF checks on every redirect. Files
 atlas tools                              # status of every tool
 atlas tools configure --workspace ~/dev/project
 atlas net search "Python lists tutorial" --limit 3
+atlas research "stock market" --category finance --days 60
+atlas research "game releases" --category gaming --days 60
 atlas net fetch https://example.com
 atlas term git status --short
 atlas fm write notes/hello.txt --text hello

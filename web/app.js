@@ -25,6 +25,7 @@ const state = {
   sending: false,
   controller: null,
   filter: "",
+  selected: new Set(),
   memories: [],
   categories: [],
   view: "chat",
@@ -249,6 +250,10 @@ function renderSessions() {
   const list = state.sessions.filter((s) =>
     !q || s.title.toLowerCase().includes(q) || s.mode.includes(q));
 
+  $("#bulk-bar").hidden = !state.sessions.length;
+  $("#bulk-all").checked = list.length > 0 && list.every((s) => state.selected.has(s.id));
+  $("#bulk-count").textContent = state.selected.size;
+
   box.innerHTML = "";
   if (!list.length) {
     box.innerHTML = `<div class="empty-note">No chats${q ? " match your search" : " yet"}.</div>`;
@@ -257,11 +262,21 @@ function renderSessions() {
   for (const s of list) {
     const row = document.createElement("div");
     row.className = "chat-row" + (s.id === state.current ? " active" : "");
+    const checked = state.selected.has(s.id) ? " checked" : "";
     row.innerHTML = `
+      <input type="checkbox" class="pick" ${checked} title="Select chat" />
       <span class="name">${esc(s.title)}</span>
       <span class="meta">${ago(s.updated)}</span>
       <button class="kill" title="Delete chat">${icon("close")}</button>`;
-    row.onclick = () => { openSession(s.id); $("#sidebar").classList.remove("open"); };
+    row.onclick = (e) => {
+      if (e.target.closest(".pick, .kill")) return;
+      openSession(s.id); $("#sidebar").classList.remove("open");
+    };
+    row.querySelector(".pick").onchange = (e) => {
+      if (e.target.checked) state.selected.add(s.id);
+      else state.selected.delete(s.id);
+      renderSessions();
+    };
     row.querySelector(".name").ondblclick = () => renameSession(s);
     row.querySelector(".kill").onclick = (e) => { e.stopPropagation(); removeSession(s); };
     box.appendChild(row);
@@ -1190,6 +1205,7 @@ const SLASH_ACTIONS = [
   { id: "tools", label: "Tools", desc: "Open the tools workspace", icon: "tools" },
   { id: "memory", label: "Memory", desc: "Open saved memories", icon: "memory" },
   { id: "usage", label: "Usage", desc: "Open local usage", icon: "pulse" },
+  { id: "research", label: "Research", desc: "Dated web research with sources", icon: "globe" },
 ];
 
 let slashItems = [];
@@ -1326,6 +1342,37 @@ $("#input").addEventListener("input", (e) => {
 });
 $("#stop").onclick = () => state.controller?.abort();
 $("#new-chat").onclick = () => { setView("chat"); newChat(); };
+function deleteSelected() {
+  const ids = [...state.selected];
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} selected chat${ids.length === 1 ? "" : "s"}? Saved memories are kept.`)) return;
+  api("/api/sessions/delete", {
+    method: "POST",
+    body: JSON.stringify({ ids, current: state.current }),
+  }).then(async (result) => {
+    state.selected.clear();
+    await refreshSessions();
+    await refreshStats();
+    if (result.deleted.includes(state.current)) {
+      state.current = null;
+      if (state.sessions.length) await openSession(state.sessions[0].id);
+      else await newChat();
+    }
+  }).catch((err) => alert(err.message));
+}
+
+$("#bulk-all").onchange = (e) => {
+  const q = state.filter.toLowerCase();
+  const list = state.sessions.filter((s) =>
+    !q || s.title.toLowerCase().includes(q) || s.mode.includes(q));
+  list.forEach((s) => {
+    if (e.target.checked) state.selected.add(s.id);
+    else state.selected.delete(s.id);
+  });
+  renderSessions();
+};
+$("#bulk-delete").onclick = deleteSelected;
+
 $("#filter").oninput = (e) => { state.filter = e.target.value; renderSessions(); };
 
 document.addEventListener("keydown", (e) => {
@@ -1424,4 +1471,10 @@ document.addEventListener("keydown", (e) => {
   if (location.hash === "#artifacts") setView("artifacts");
   if (location.hash === "#usage") setView("usage");
   if (location.hash === "#memory") setView("memory");
+
+  const intro = $("#intro");
+  if (intro && !new URLSearchParams(location.search).has("nointro")) {
+    requestAnimationFrame(() => intro.classList.add("play"));
+    setTimeout(() => intro.remove(), 2600);
+  }
 })();

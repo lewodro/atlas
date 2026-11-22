@@ -33,7 +33,7 @@ import registry
 import skills
 import webtools
 import workspace
-from config import FRONTIER_READY, MODEL, WHERE
+from config import FRONTIER_READY, MAX_PROMPT_CHARS, MODEL, WHERE
 from llm import chat, tier_model
 
 # ---------------------------------------------------------------- tools
@@ -83,7 +83,14 @@ def build_system(mode: str, user_text: str, skill_id: str | None = None) -> str:
     for sid in skill_ids[:2]:
         skill = skills.load_skill(sid)
         if skill and skill.get("enabled"):
-            prompt += "\n\nSKILL: " + skill["name"] + "\n" + skill["body"][:1100]
+            prompt += "\n\nSKILL: " + skill["name"] + "\n" + skill["body"][:900]
+    if len(prompt) > MAX_PROMPT_CHARS:
+        head, _, tail = prompt.partition("\n\nSKILL:")
+        tail = ("SKILL:" + tail)[:900] if tail else ""
+        parts = [head[:2600], tail]
+        if local_card:
+            parts.append(local_card[:700])
+        prompt = "\n\n".join(part for part in parts if part)[:MAX_PROMPT_CHARS]
     return prompt
 
 

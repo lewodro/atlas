@@ -95,6 +95,15 @@ def _safe_path(path: str) -> Path:
 
 def read(path: str, max_chars: int = MAX_BYTES) -> str:
     target = _safe_path(path)
+    if not target.is_file() and "/" not in str(path).strip():
+        # Small models often drop the parent folder from a path they used
+        # earlier. Find a matching file in immediate child folders.
+        for child in sorted(target.parent.iterdir()):
+            if child.is_dir() and not child.name.startswith("."):
+                candidate = child / target.name
+                if candidate.is_file() and not candidate.is_symlink():
+                    target = candidate
+                    break
     if not target.is_file():
         raise ToolError("not a file inside the workspace")
     size = target.stat().st_size

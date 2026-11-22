@@ -32,7 +32,7 @@ ROLES: dict[str, dict] = {
     },
     "research": {
         "blurb": "search, fetch, cite",
-        "skills": ["web-research"],
+        "skills": ["recent-events", "web-research"],
     },
     "engineer": {
         "blurb": "inspect workspace, Git and code",
