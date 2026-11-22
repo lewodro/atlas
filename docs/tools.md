@@ -113,6 +113,61 @@ Only these run: `ls`, `pwd`, `cat`, `tree`, `git status`, `git log`,
 env vars or arbitrary executables**. Every command runs with `shell=False`,
 a timeout and capped output, with `cwd` fixed to the configured workspace.
 
+## GitHub (read-only)
+
+Uses the installed `gh` CLI and an allowlist in `data/github.json` (defaults
+to `lewodro/atlas`). No writes, no shell, fixed GET requests.
+
+```bash
+atlas github issues --limit 5
+atlas github prs --limit 5
+atlas github repo
+```
+
+## Code execution
+
+Runs Python in a restricted subprocess: `-I -S`, an audit hook that blocks
+network imports and outside-file access, CPU/file-size limits, a 12s timeout
+and capped output. Writes inside the workspace only. Permission: ASK.
+
+```bash
+printf 'print(6*7)' | atlas code
+```
+
+## Images
+
+SVG images are generated locally and deterministically from a prompt, with
+simple edits (background, caption, scale). They are registered as artifacts
+and previewable in the GUI. Permission: ASK for writes.
+
+```bash
+atlas image generate "teal hills" --path images/hills.svg
+atlas image edit images/hills.svg --caption "edited locally"
+```
+
+## External providers
+
+A provider is a local HTTP service with `/invoke`. Its manifest lists tool ids
+and JSON schemas. Registered tools join the same registry and need no core
+changes. Permission defaults to ASK.
+
+```json
+{
+  "name": "Local tools",
+  "base_url": "http://127.0.0.1:9999",
+  "tools": [
+    {"id": "ping", "description": "Ping the local service", "parameters": {"type": "object", "properties": {}}}
+  ]
+}
+```
+
+```bash
+atlas providers register local-tools ./provider.json
+atlas providers list
+```
+
+Last Seat MCP is intentionally not included; it is a separate project.
+
 ## Status and configuration
 
 ```bash

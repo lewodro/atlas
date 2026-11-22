@@ -237,6 +237,10 @@ Three tools are live in chat and on the CLI. See **[docs/tools.md](docs/tools.md
 | Files | Read / write / list / mkdir / move / delete in the workspace | `atlas fs read path` |
 | Terminal | Allowlisted `ls`, `git status`, `git log`, … | `atlas term ls` |
 | Git | Local status / diff / log | `atlas tools run git_status` |
+| GitHub | Read-only issues / PRs / repo info via `gh` | `atlas github prs --limit 5` |
+| Code | Restricted Python sandbox | `printf 'print(6*7)' | atlas code` |
+| Images | Local SVG generation and edits | `atlas image generate "teal hills"` |
+| Providers | Register local HTTP tool services | `atlas providers register ID manifest.json` |
 
 Network calls are pinned to public IPs with SSRF checks on every redirect. Filesystem access is confined to an explicit workspace; hidden files, keys, symlinks and path traversal are refused. Tool output is treated as untrusted data, never as instructions.
 
