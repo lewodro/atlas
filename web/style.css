@@ -970,3 +970,5 @@ dialog#configure { width: min(760px, 94vw); }
 @media (prefers-reduced-motion: reduce) {
   .intro.play, .intro.play .intro-mark { animation-duration: .1s; }
 }
+
+.no-intro .intro { display: none; }
