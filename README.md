@@ -159,6 +159,11 @@ keyboard-accessible controls for model, theme and profile. Cyan is reserved
 for active state, local model status and running tools. No native dropdowns,
 no dashboard clutter.
 
+Chat renders Markdown and common LaTeX locally: `\(...\)`, `\[...\]`,
+fractions, roots, sums, superscripts, lists, code fences and safe links.
+Fake image links are ignored; real tool output (including function plots) is
+shown in a dedicated result block. No external JS or CDN is used.
+
 Every non-chat view has a **← Chat** arrow and a `/view` path bar with a live
 status count (available tools, installed skills, artifacts, memories), so you
 can return to the conversation without reloading the page.

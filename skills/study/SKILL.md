@@ -52,3 +52,9 @@ When the user wants persistent study notes:
 - Prefer one sharp sentence over three vague ones.
 - Reuse the user's stored notes instead of re-explaining from scratch.
 - If the answer is already in a note, reference the note, do not copy it.
+
+## Questions
+
+When the user names a topic for questions ("three questions on calculus"),
+every question must be about that exact topic. Do not reuse a previous example
+such as quadratics. Number the questions and keep them exam-style.

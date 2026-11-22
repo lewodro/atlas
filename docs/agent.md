@@ -87,6 +87,18 @@ starts a server with `ATLAS_WORKSPACE`, `ATLAS_DATA_DIR` and `ATLAS_NOTES_DIR`
 set, so chats, memories, artifacts and notes are fully isolated between
 instances. This is the base for running several agents later.
 
+## Rich chat rendering
+
+`web/render.js` is a tiny offline renderer. It turns `\(...\)` and
+`\[...\]` into readable Unicode/HTML math, formats Markdown headings,
+lists, bold, inline code and fenced code, and drops fake image links. Real
+`plot_function` output is displayed in its own result block so a text plot is
+visible instead of a hallucinated `![...]` link.
+
+Study prompts are bounded: question-only requests skip tools, pin the exact
+topic from the user's words, and get one validated retry if the model answers
+with the wrong topic or the wrong number of questions.
+
 ## Tool registry
 
 `registry.py` is the single source of truth. A provider registers a `ToolSpec`
