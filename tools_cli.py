@@ -21,6 +21,7 @@ import goals
 import netguard
 import orchestrator
 import registry
+import research
 import skills
 import webtools
 import workspace
@@ -113,6 +114,12 @@ def main() -> int:
     goal_sub.add_parser("status")
     goal_sub.add_parser("clear")
 
+    research_cmd = sub.add_parser("research", help="dated web research with sources")
+    research_cmd.add_argument("topic", nargs="+")
+    research_cmd.add_argument("--days", type=int, default=60)
+    research_cmd.add_argument("--category", default="general",
+                              choices=["finance", "news", "gaming", "ai", "general"])
+
     sub.add_parser("workspace", help="show workspace and Git context")
 
     net = sub.add_parser("net", help="web search and fetch")
@@ -148,6 +155,11 @@ def main() -> int:
                 argv += [args.id, "--port", str(args.port)]
             with patch_sys_argv(argv):
                 orchestrator.main()
+            return 0
+
+        if args.group == "research":
+            print(research.research(" ".join(args.topic), args.days,
+                                    args.category)["digest"])
             return 0
 
         if args.group == "goal":

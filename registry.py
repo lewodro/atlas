@@ -23,6 +23,7 @@ import config
 import fstools
 import gittools
 import mathtools
+import research
 import skills
 import termtools
 import webtools
@@ -241,6 +242,15 @@ def _plot(args: dict) -> str:
     )
 
 
+def _recent_research(args: dict) -> str:
+    return research.research(
+        args.get("topic", ""),
+        int(args.get("days", 60)),
+        str(args.get("category", "general")),
+        int(args.get("sources", 4)),
+    )["digest"]
+
+
 def _file_manager(args: dict) -> Any:
     action = str(args.get("action", "")).lower()
     path_value = str(args.get("path") or "").strip()
@@ -318,6 +328,17 @@ def register_builtins() -> None:
         description="Fetch one public http(s) page and return readable text with its URL.",
         parameters={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
         handler=_web_fetch, category="web", provider="atlas",
+    ))
+    register(ToolSpec(
+        id="recent_research",
+        description="Search the live web for recent dated information (default 60 days) with real source URLs. Categories: finance, news, gaming, ai, general.",
+        parameters={"type": "object", "properties": {
+            "topic": {"type": "string"},
+            "category": {"type": "string", "enum": ["finance", "news", "gaming", "ai", "general"]},
+            "days": {"type": "integer", "description": "default 60"},
+            "sources": {"type": "integer", "description": "default 4"}},
+            "required": ["topic"]},
+        handler=_recent_research, category="web", provider="atlas",
     ))
     register(ToolSpec(
         id="plot_function",

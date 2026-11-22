@@ -1205,6 +1205,7 @@ const SLASH_ACTIONS = [
   { id: "tools", label: "Tools", desc: "Open the tools workspace", icon: "tools" },
   { id: "memory", label: "Memory", desc: "Open saved memories", icon: "memory" },
   { id: "usage", label: "Usage", desc: "Open local usage", icon: "pulse" },
+  { id: "research", label: "Research", desc: "Dated web research with sources", icon: "globe" },
 ];
 
 let slashItems = [];
