@@ -39,6 +39,7 @@ import artifacts
 import fstools
 import goals
 import librarian
+import llm
 import memory
 import models
 import dispatch
@@ -115,11 +116,12 @@ def decide_permission(token: str, allow: bool) -> bool:
     return True
 
 
-def _tool_round(messages: list[dict], session_id: str, user_text: str, model: str | None = None):
+def _tool_round(messages: list[dict], session_id: str, user_text: str,
+                model: str | None = None, tools: list[dict] | None = None):
     """One streaming assistant turn. Yields deltas, returns (text, calls)."""
     content = ""
     calls: dict[int, dict] = {}
-    for chunk in stream_chat(messages, tool_definitions(), model=model):
+    for chunk in stream_chat(messages, tools if tools is not None else tool_definitions(), model=model):
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta
@@ -182,6 +184,30 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
         if skill:
             yield ("skill", {"id": skill_id, "name": skill["name"], "role": role})
 
+    low_clean = clean.lower()
+    question_match = re.search(
+        r"(?:one|two|three|1|2|3)\s+.*?questions?\s+(?:on|about|for)\s+([a-z0-9][a-z0-9 \-]{1,40})",
+        low_clean,
+    )
+    question_only = skill_id == "study" and bool(question_match)
+
+    if skill_id == "study":
+        low_study = clean.lower()
+        # Small models replace the requested topic with whatever was in their
+        # last example. Pin the exact topic from the user's own words.
+        topic = re.search(
+            r"(?:questions?|quiz|exercises?)\s+(?:on|about|for)\s+([a-z0-9][a-z0-9 \-]{1,40})",
+            low_study,
+        )
+        if topic:
+            messages.append({"role": "user", "content":
+                f"Use exactly this topic for every question: {topic.group(1).strip()}. "
+                "Do not substitute a previous example topic."})
+        if not question_only and ("plot" in low_study or "graph" in low_study):
+            messages.append({"role": "user", "content":
+                "Call plot_function with the requested expression before answering. "
+                "Never describe a plot you did not generate."})
+
     personal = re.search(
         r"who am i|my name|what do i study|what do i know about me|my sport|my project",
         user_text.lower(),
@@ -210,7 +236,9 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     git_prompts: set[str] = set()
     try:
         for _ in range(4):  # bounded multi-tool loop
-            content, calls = yield from _tool_round(messages, session_id, user_text, model)
+            content, calls = yield from _tool_round(
+                messages, session_id, user_text, model, tools=[] if question_only else None
+            )
             if not calls:
                 answer_parts.append(content)
                 break
@@ -316,6 +344,30 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
             if answer:
                 yield ("delta", {"text": answer})
         answer = answer or "(no answer)"
+
+        if question_only and question_match:
+            topic = question_match.group(1).strip()
+            expected = 3 if ("three" in low_clean or "3" in low_clean) else (
+                2 if ("two" in low_clean or "2" in low_clean) else 1
+            )
+            found = re.findall(r"(?:^|\n)\s*\d+[.)]\s*(.+)", answer)
+            words = [w for w in re.findall(r"[a-z0-9]{3,}", topic.lower())]
+            on_topic = [q for q in found if any(w in q.lower() for w in words)]
+            if len(on_topic) < expected:
+                strict = (
+                    f"You are writing exactly {expected} exam-style revision questions "
+                    f"about {topic}. Return only a numbered list. Every question must "
+                    f"mention the topic {topic}. Do not use any other topic."
+                )
+                retry = llm.chat(
+                    [{"role": "system", "content": strict},
+                     {"role": "user", "content": f"Write {expected} questions on {topic}."}],
+                    None, model=model,
+                )
+                if (retry.content or "").strip():
+                    answer = retry.content.strip()
+                    yield ("replace", {"text": answer})
+
         active_goal = goals.current()
         if active_goal:
             if "GOAL COMPLETE" in answer.upper():
@@ -389,7 +441,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/":
                 return self._file(WEB / "index.html")
-            if path in {"/app.js", "/style.css"}:
+            if path in {"/app.js", "/style.css", "/render.js"}:
                 return self._file(WEB / path.lstrip("/"))
             if path == "/api/stats":
                 current = models.load()

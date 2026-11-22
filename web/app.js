@@ -63,12 +63,8 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function md(text) {
-  return esc(text).split(/```/).map((part, i) => {
-    if (i % 2) return `<pre><code>${part.replace(/^[a-z]*\n/, "")}</code></pre>`;
-    return part
-      .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-  }).join("");
+  if (typeof renderMarkdown === "function") return renderMarkdown(text);
+  return esc(text);
 }
 
 function ago(iso) {
@@ -334,10 +330,20 @@ const TOOL_LABELS = {
 };
 
 function toolLine(name, result) {
+  const label = TOOL_LABELS_EXTRA[name] || TOOL_LABELS[name] || `Used ${name}`;
+  if (name === "plot_function") {
+    const el = document.createElement("div");
+    el.className = "plot-result";
+    el.innerHTML = `<div class="plot-head">${icon("spark")} ${esc(label)}</div>
+      <pre>${esc(result)}</pre>`;
+    $("#messages").appendChild(el);
+    scrollDown();
+    return;
+  }
   const el = document.createElement("details");
   el.className = "tool-call";
   el.innerHTML = `
-    <summary><span class="pulse"></span><span>${esc(TOOL_LABELS_EXTRA[name] || TOOL_LABELS[name] || `Used ${name}`)}</span>${icon("chevron")}</summary>
+    <summary><span class="pulse"></span><span>${esc(label)}</span>${icon("chevron")}</summary>
     <pre>${esc(result)}</pre>`;
   $("#messages").appendChild(el);
   scrollDown();
@@ -352,6 +358,7 @@ const CATEGORY_LABELS = {
 const TOOL_LABELS_EXTRA = {
   web_search: "Searched the web",
   web_fetch: "Fetched a page",
+  plot_function: "Plotted a function",
   filesystem: "Used the workspace",
   git_status: "Checked Git status",
   git_diff: "Read the diff",
@@ -598,6 +605,10 @@ function handleEvent(block, reply) {
   const { name, data } = event;
   if (name === "delta") {
     reply.text += data.text;
+    reply.body.innerHTML = md(reply.text);
+    scrollDown();
+  } else if (name === "replace") {
+    reply.text = data.text;
     reply.body.innerHTML = md(reply.text);
     scrollDown();
   } else if (name === "tool") {
