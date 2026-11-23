@@ -87,6 +87,30 @@ starts a server with `ATLAS_WORKSPACE`, `ATLAS_DATA_DIR` and `ATLAS_NOTES_DIR`
 set, so chats, memories, artifacts and notes are fully isolated between
 instances. This is the base for running several agents later.
 
+## Answer depth
+
+Requests containing `detailed`, `definitive`, `comprehensive`, `help me build`,
+`walk me through` etc. get a bounded long-answer instruction (500-900 words,
+sections, examples). If the first local-model answer is under 450 words, the
+server makes one expansion call and replaces the text via a `replace` event.
+Short questions stay short.
+
+## Agent collaboration
+
+Workers can share a workspace and exchange plain Markdown handoff notes:
+
+```bash
+atlas workers create Builder --workspace /tmp/game --model qwen2.5:3b --role coder
+atlas workers create Tester --workspace /tmp/game --model qwen-local:latest --role tester
+atlas orchestrate "build a small Pac-Man style game" \
+  --workers ID1 ID2 --workspace /tmp/game --sequential --timeout 600
+```
+
+The coder writes real files and calls `handoff`; the tester reads it, runs
+`project_test`, writes `test_report`, and hands findings back. `modes.py`
+preserves coder/tester as session modes for these protocols while still
+showing only one mode (`agent`) in the product.
+
 ## Rich chat rendering
 
 `web/render.js` is a tiny offline renderer. It turns `\(...\)` and

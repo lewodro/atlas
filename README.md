@@ -344,12 +344,18 @@ atlas workers create Engineer --workspace /tmp/project --model qwen-local:latest
 atlas workers start <id>
 atlas orchestrate "research recent releases and compare with the local project" \
   --workspace ~/devAI/AtlasWSPC
+atlas orchestrate "build a small Pac-Man style game" \
+  --workers BUILDER_ID TESTER_ID --workspace /tmp/game --sequential --timeout 600
 atlas workers stop <id>
 ```
 
 The **Workers** page in the GUI does the same thing with start/stop buttons and
 a streaming goal runner. Pick a project from the dropdown to route the goal to
-workers scoped to that folder, or leave it on **Any project**. Every goal run
+workers scoped to that folder, or leave it on **Any project**. Workers can share a workspace and pass `HANDOFF.md` notes plus real files;
+`--sequential` runs the builder first so the tester can inspect its output.
+Detailed or definitive questions get long structured answers automatically.
+
+Every goal run
 creates its own chat in the sidebar, with the goal as the user message and the
 synthesized report as the answer — so you can keep one chat per research task
 or per project. Everything is local and open-source — no cloud orchestration

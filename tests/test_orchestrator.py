@@ -22,9 +22,10 @@ class UnifiedMode(unittest.TestCase):
         self.assertEqual(modes.DEFAULT, "agent")
 
     def test_old_names_are_aliases(self):
-        for old in ("coach", "tutor", "review", "debug", "plan", "study"):
+        for old in ("coach", "tutor", "review", "debug", "plan"):
             self.assertEqual(modes.canonical(old), "agent")
             self.assertEqual(modes.get(old), modes.get("agent"))
+        self.assertEqual(modes.canonical("study"), "study")  # worker role
 
     def test_build_does_not_mention_old_modes(self):
         prompt = modes.build("coach", "some note", "git log")
