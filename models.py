@@ -37,14 +37,10 @@ DEFAULTS = {
     "model": config.MODEL,
 }
 
-#: Local runtimes and their default OpenAI-compatible ports. Probed in
+#: Local runtimes and their default OpenAI-compatible ports. Derived from the
+#: one provider registry in config.py, so CLI, GUI and doctor agree. Probed in
 #: parallel, so opening the GUI costs about one second even if none are up.
-RUNTIMES = [
-    ("Ollama", "http://127.0.0.1:11434/v1"),
-    ("LM Studio", "http://127.0.0.1:1234/v1"),
-    ("llama.cpp", "http://127.0.0.1:8080/v1"),
-    ("vLLM", "http://127.0.0.1:8000/v1"),
-]
+RUNTIMES = [(p["name"], p["base_url"]) for p in config.PROVIDERS.values()]
 
 _AUTO: dict | None = None
 
@@ -55,7 +51,8 @@ def _auto_pick() -> dict:
         if runtime["models"]:
             return {
                 "base_url": runtime["base_url"],
-                "api_key": "",
+                # Non-empty: openai >= 3.42 rejects an empty key.
+                "api_key": config.API_KEY,
                 "model": runtime["models"][0],
             }
     return {}
@@ -96,9 +93,26 @@ def save(**patch: str) -> dict:
 
 
 def _get(url: str, api_key: str, timeout: float = 4.0):
-    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
+    key = api_key or config.API_KEY
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {key}"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.load(response)
+
+
+def native_status(provider: str, timeout: float = 1.5) -> dict | None:
+    """Cheap native status probe (Ollama /api/tags, others /v1/models).
+
+    Returns the decoded payload, or None when the runtime is offline. Used by
+    the doctor so it can distinguish 'server down' from 'model not installed'.
+    """
+    preset = config.PROVIDERS.get(provider)
+    if not preset:
+        return None
+    url = preset["native_url"].rstrip("/") + preset["probe"]
+    try:
+        return _get(url, preset["api_key"], timeout=timeout)
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return None
 
 
 def list_models(
@@ -197,6 +211,7 @@ def describe() -> dict:
     ]
     return {
         "base_url": current["base_url"],
+        "provider": config.provider_for_base_url(current["base_url"]) or "custom",
         "model": current["model"],
         "models": models,
         "reachable": bool(models),

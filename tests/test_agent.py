@@ -67,7 +67,8 @@ class Registry(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             with patch.object(registry, "PERMISSIONS_FILE", root / "permissions.json"), \
-                 patch.object(registry, "ACTIVITY_FILE", root / "activity.jsonl"):
+                 patch.object(registry, "ACTIVITY_FILE", root / "activity.jsonl"), \
+                 patch.object(fstools, "status", return_value={"available": True, "workspace": str(root)}):
                 result = registry.run("files", {"action": "write", "path": "x", "content": "y"})
                 self.assertEqual(result["error"], registry.NEEDS_APPROVAL)
                 self.assertFalse(result["ok"])

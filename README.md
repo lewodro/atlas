@@ -5,469 +5,284 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
 [![Local](https://img.shields.io/badge/runs-100%25%20local-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-black)]()
-[![Web search](https://img.shields.io/badge/web%20search-DuckDuckGo-22d3a6)]()
-[![Web fetch](https://img.shields.io/badge/web%20fetch-SSRF%20guarded-22d3a6)]()
-[![Filesystem](https://img.shields.io/badge/filesystem-workspace%20confined-22d3a6)]()
-[![Tools](https://img.shields.io/badge/tools-6%20live-2ea44f)]()
-[![Skills](https://img.shields.io/badge/skills-4%20lazy--loaded-22d3a6)]()
-[![Permissions](https://img.shields.io/badge/permissions-ALLOW%20%2F%20ASK%20%2F%20DENY-6f42c1)]()
 [![Local data](https://img.shields.io/badge/local%20data-never%20committed-2ea44f)]()
-[![Terminal](https://img.shields.io/badge/terminal-allowlisted-22d3a6)]()
-[![Agent](https://img.shields.io/badge/agent-unified-22d3a6)]()
-[![Orchestrator](https://img.shields.io/badge/orchestrator-roles%20%26%20instances-6f42c1)]()
-[![Study](https://img.shields.io/badge/study-notes%20%26%20math-22d3a6)]()
+
+Atlas keeps durable memories in a local SQLite database and plain Markdown,
+retrieves the relevant ones next time, and never sends them anywhere. Memory
+survives model swaps: choose Ollama, LM Studio, llama.cpp or vLLM and your
+private data stays yours.
 
 ```
-you> I'm a first-year CS student, 8 GB M1, learning Python and C.
-     · noted -> notes/the-user-is-learning-python-and-c.md
+you> I'm learning Python on an M4, prefer short answers.
+     · noted -> notes/the-user-prefers-short-answers.md
 
-you> /quit
-$ atlas
+$ atlas                       # restart, any model
 you> what do you know about me?
-
-atlas> First-year CS student on an 8 GB M1, learning Python and C.
-       You prefer short answers. You own a Windows laptop with a 2060.
+atlas> You prefer short answers. You're learning Python on an M4.
 ```
 
-Every other assistant forgets you when the tab closes. Atlas writes to plain
-Markdown files, retrieves the relevant ones next time, and never sends them
-anywhere.
+---
+
+## Requirements
+
+- **Python 3.12+** (the repo pins 3.13 in `.python-version`; `uv` installs it for you)
+- **[uv](https://docs.astral.sh/uv/)** for dependencies
+- **One local model runtime**, optional but recommended:
+  - [Ollama](https://ollama.com) — easiest; default port `11434`
+  - [LM Studio](https://lmstudio.ai) — default port `1234`
+  - llama.cpp server (`:8080`) or vLLM (`:8000`)
+- No API key for local runtimes. No cloud account. No authentication.
+
+Everything else is in `uv.lock`. Nothing is downloaded from this repo except code.
 
 ---
 
-## Screenshots
-
-| | | |
-|---|---|---|
-| ![Atlas chat](docs/screenshots/chat.png) | ![Usage](docs/screenshots/usage.png) | ![Memory](docs/screenshots/memory.png) |
-| Near-black chat &amp; welcome | Real usage data | Plain-language memory |
-
-| | |
-|---|---|
-| ![Tools](docs/screenshots/tools.png) | ![Skills](docs/screenshots/skills.png) |
-| Tool workspace | Lazy-loaded skills |
-
-| | |
-|---|---|
-| ![Artifacts](docs/screenshots/artifacts.png) | ![Settings](docs/screenshots/settings.png) |
-| Real artifacts with previews | Themes, models, tools, memory |
-
----
-
-## Why another AI assistant?
-
-Because the interesting problem isn't the model. Optimization is always different & The problem the **memory you can trust.**
-
-| | Atlas | Hosted assistants |
-|---|---|---|
-| Cost | $0 forever | subscription / per-token |
-| Offline | yes | no |
-| Your memory | files in `notes/` you can edit and delete | vendor's database |
-| Who can read it | you | the vendor |
-| Behaviour changes when | *you* edit the code | *they* ship an update |
-| Model quality | ~2B–28B local | frontier |
-
-Atlas is not smarter than Claude. It's **yours**, and it can't be repriced,
-shut down, or trained on your data. 
-
----
-
-## Features
-
-- **Persistent memory** in plain Markdown. One fact per file. Delete a wrong
-  one with `rm`.
-- **Obsidian-ready vaults.** Point `ATLAS_VAULT` at your vault; Atlas only
-  manages `Atlas/Memory/`. See **[the Obsidian guide](docs/obsidian.md)**.
-- **Two-pass memory writes.** A chat call plus a cheap JSON "librarian" pass,
-  because small models only call tools correctly ~50% of the time.
-- **Three guards against invented memories.** No guesses, no meta-facts, no
-  ungrounded notes. This is the part most personal-AI projects get wrong.
-- **Semantic recall** via `nomic-embed-text`, with keyword fallback that works
-  on a plane.
-- **Five modes**: `coach`, `tutor`, `review`, `debug`, `plan`.
-- **Activity awareness**: reads your `git log` and edited files. No screenshots,
-  no keylogger, no cloud.
-- **Orchestration and swarm mode** at your hands.
-- **Runs on 8 GB of RAM.** Or offload the model to a gaming laptop over Wi-Fi.
-- **Swappable models.** Ollama, llama.cpp, vLLM, LM Studio, or another
-  OpenAI-compatible endpoint. See **[custom models and speed](docs/custom-models.md)**.
-- **~1,000 lines of Python.** No frameworks. You can read all of it.
-
----
-
-## Quickstart
+## Quick start
 
 ```bash
 git clone https://github.com/lewodro/atlas && cd atlas
-./install.sh          # uv + ollama + model + verify (~5 min)
-atlas                 # talk to it
+uv sync                       # creates .venv, installs openai + numpy
+cp .env.example .env          # choose runtime + model here
 ```
 
-Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), and
-[Ollama](https://ollama.com) — or let the installer fetch a portable copy:
+Pick a model and install it (Ollama example):
 
 ```bash
-./install.sh --vendored    # no Homebrew, everything inside ./vendor
+ollama pull deepseek-r1:7b    # no API key needed for local Ollama
+# Low-memory machine (e.g. 8 GB M1): use a 3B model instead:
+# ollama pull qwen2.5:3b
 ```
 
-Verify:
+The `.env` you copied already selects the Ollama runtime:
+
+```ini
+ATLAS_MODEL_PROVIDER=ollama
+ATLAS_OLLAMA_URL=http://127.0.0.1:11434
+ATLAS_API_KEY=ollama
+```
+
+`ATLAS_MODEL` is intentionally left unset in the example. Atlas then
+**auto-detects the first installed local model on whichever machine you run
+it on**. That means the same repo works on an 8 GB M1 with a small 3B model and
+on a bigger machine with DeepSeek R1 7B — no source edits, no per-machine
+hardcoding. To force a model on a particular machine, set it in `.env` (this
+file is gitignored) or use `atlas use <model>`:
+
+```ini
+# 8 GB M1
+ATLAS_MODEL=qwen2.5:3b
+# bigger machine (after `ollama pull deepseek-r1:7b`)
+ATLAS_MODEL=deepseek-r1:7b
+```
+
+Diagnose the install, then start:
 
 ```bash
-uv run python check.py        # 7 checks
-uv run python eval/run_eval.py  # 5/5 = memory works
+uv run python check.py        # should end with "All good"
+uv run python main.py         # interactive chat in the terminal
 ```
+
+Prefer a browser? `uv run python server.py` serves `http://localhost:7777`
+(or `atlas web`, which opens it and stops the server when the tab closes).
+
+Optional: put the `atlas` launcher on your PATH for the short commands used
+below and in the docs:
+
+```bash
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/atlas" ~/.local/bin/atlas   # ensure ~/.local/bin is on PATH
+atlas check
+```
+
+`./install.sh` is an alternative all-in-one installer (uv + Ollama + model +
+doctor). It is idempotent and never touches `data/` or `notes/`. On Windows use
+`install.ps1`; see [SETUP-WINDOWS.md](SETUP-WINDOWS.md).
+
+---
+
+## `check.py` — the doctor
+
+```bash
+uv run python check.py        # or: atlas check
+```
+
+It reports Python version, dependencies, venv, `.env` and environment variables,
+provider registry, selected runtime/model, local data dir, memory store,
+workspace config, listening ports, Ollama/LM Studio reachability, installed
+model, a real generation, tool calling, memory extraction, embeddings and notes.
+Failures explain the fix instead of dumping a traceback, e.g.:
+
+```
+[ FAIL ] selected model installed — Ollama is running, but deepseek-r1:7b
+         is not installed. Run: ollama pull deepseek-r1:7b
+```
+
+Nothing is printed from `ATLAS_API_KEY` or any other secret.
+
+Verify the memory path separately with the offline suite:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+---
+
+## Model configuration
+
+Atlas talks to anything that speaks the OpenAI chat-completions API. The
+runtime list is one registry (`config.PROVIDERS`) shared by `.env`, the CLI
+and the Web UI, so they never disagree.
+
+| Provider | `.env` value | Default endpoint |
+|---|---|---|
+| Ollama | `ollama` | `http://127.0.0.1:11434/v1` |
+| LM Studio | `lmstudio` | `http://127.0.0.1:1234/v1` |
+| llama.cpp | `llamacpp` | `http://127.0.0.1:8080/v1` |
+| vLLM | `vllm` | `http://127.0.0.1:8000/v1` |
+| Any compatible endpoint | `ATLAS_BASE_URL=...` | your URL |
+
+Existing names still work: `ATLAS_BASE_URL` overrides the provider URL, and
+`ATLAS_MODEL` chooses the model. `ATLAS_OLLAMA_URL` sets Ollama's root; sibling
+variables (`ATLAS_LM_STUDIO_URL`, `ATLAS_LLAMACPP_URL`, `ATLAS_VLLM_URL`) do the
+same for the others. Local servers ignore the API key — any non-empty value is
+fine (`ollama` is the default).
+
+### Switching models without editing source
+
+```bash
+atlas models                         # detected runtimes + installed models
+atlas models --runtime lmstudio      # point at LM Studio
+atlas use qwen2.5:7b                 # change the default model
+atlas models --pull qwen2.5:7b       # download with Ollama, then use it
+atlas models --endpoint http://127.0.0.1:1234/v1 --use local-model
+```
+
+Choices live in `data/settings.json` (gitignored) and win over `.env`, so the
+Web UI can switch models with no restart. Click **⚙** in the UI to pick a
+runtime and model; the top-bar dropdown switches models per chat. Embedding
+models are hidden from the picker. See [docs/custom-models.md](docs/custom-models.md).
+
+If no `.env`, no `data/settings.json` and no `ATLAS_MODEL` are present, Atlas
+auto-detects the first local runtime that answers and uses its first chat model.
+That is why a bare clone can still pass `check.py`.
+
+### Qwen instead of DeepSeek, or any other local model
+
+```bash
+ollama pull qwen2.5-coder:7b
+atlas use qwen2.5-coder:7b          # or edit ATLAS_MODEL in .env
+```
+
+---
+
+## Running Atlas
+
+```bash
+uv run python main.py                # unified agent, interactive
+uv run python main.py --once "explain pointers"
+atlas study "explain derivatives"   # one-shot study session
+uv run python server.py              # Web UI on :7777
+uv run python server.py --stay-open # keep it running until Ctrl+C
+```
+
+Useful commands (see [docs/tools.md](docs/tools.md) for the security model):
+
+```bash
+atlas tools                          # registry-driven tool list + permissions
+atlas skills list | show web-research
+atlas artifacts list
+atlas workspace                      # root, repo, branch, clean/dirty
+atlas goal set "summarize the last commit"
+atlas agents roles
+atlas bench
+```
+
+The agent loop selects a skill, calls tools, inspects results and answers.
+Writes require an explicit Allow; DENY tools are never advertised. See
+[docs/agent.md](docs/agent.md).
+
+---
+
+## Memory — local, private, portable
+
+Durable memories live in:
+
+- **`data/atlas.db`** — SQLite: profiles, structured memories, chat sessions/turns, FTS index
+- **`notes/`** — human-readable Markdown, one fact per file (`_`-prefixed files are generated)
+
+Both are **gitignored**. The repository ships the engine, schema, migrations,
+tests, example docs and seed tooling — never personal memories, chats, profile
+data, paths or secrets. On import, Atlas creates the data/notes directories and
+an **empty** memory store by default. There is no built-in identity: Atlas never
+assumes who you are until your own memories say so.
+
+Profile isolation: every memory and session query is scoped to `user_id`.
+Switching models never changes what you remember; switching profiles isolates it.
+
+```bash
+atlas user list | create "Friend" | switch u-xxxxxxxx
+atlas memory list | search "tennis" | add projects "Side project: grid renderer"
+atlas memory correct 19 "Updated fact" | forget 19
+atlas remember "I am learning Rust."     # explicit write, no model call
+```
+
+### Move your memories to another machine (private, no GitHub)
+
+```bash
+atlas memory export atlas-memory.json   # one profile's durable memories
+# copy atlas-memory.json privately (USB, encrypted drive, password manager…)
+atlas memory import atlas-memory.json
+```
+
+The file is versioned JSON (`format: atlas-memory`, `version: 1`) containing the
+profile id/name and memories with their ids, categories, timestamps and scores.
+Import validates the format/version, preserves ids and categories, rejects
+secrets, and skips rows already present (by id or near-identical content), so
+re-importing is safe. Without a filename, `atlas memory export` prints JSON to
+stdout, and `atlas memory import` reads legacy `notes/*-seed-*.md` notes.
+Full schema: [docs/memory.md](docs/memory.md).
 
 ---
 
 ## Web UI
 
-Same harness, same memory, saved sessions. Browser optional. On first launch
-Atlas finds your running Ollama, LM Studio, llama.cpp or vLLM server by itself
-— click ⚙ to switch runtimes and models without editing files.
+Same harness, same memory, saved sessions. On first launch Atlas probes
+Ollama, LM Studio, llama.cpp and vLLM in parallel — click ⚙ to switch runtimes
+and models without editing files. Vanilla HTML/CSS/JS, no build step.
 
-The interface is a quiet workspace: a compact sidebar with chats, Tools,
-Skills, Artifacts, Usage and Memory; a single rounded composer; custom
-keyboard-accessible controls for model, theme and profile. Cyan is reserved
-for active state, local model status and running tools. No native dropdowns,
-no dashboard clutter.
-
-Every non-chat view has a **← Chat** arrow and a `/view` path bar with a live
-status count (available tools, installed skills, artifacts, memories), so you
-can return to the conversation without reloading the page.
-
-Themes: Atlas (near-black + cyan), Midnight (pitch-black + deep blue),
-Mono (black + gray), Forest (black + muted green), Graphite (pure black +
-white) and Funky (near-black + soft violet). Preview one with
-`http://localhost:7777/?theme=graphite`. The custom accent row adds Cyan,
-Blue, Green, White or Violet on top of any theme.
-
-**Tools** shows what is genuinely available on this machine and clearly marks
-everything else as *not configured* — web search, filesystem, terminal, Git,
-image generation and MCP servers have UI surfaces ready, but are not
-implemented yet. **Artifacts** is an empty list with preview components ready
-for real files. **Usage** shows only real counts from the local API, with
-terminal-style text charts and an optional floating panel. **Memory** presents
-durable facts as plain statements grouped into About you / Preferences /
-Projects / Goals / Environment.
-
-The default theme is near-black with a small cyan accent. Settings offers
-Atlas (cyan), Midnight (deep blue), Mono (white/gray) and Forest (muted green),
-plus a custom accent. Themes change backgrounds, surfaces, borders and text,
-not just the accent color. Everything is stored in the browser's local
-storage — no account, no sync.
+`⌘K` new chat · `↵` send · `⇧↵` newline · `esc` stop. Themes and UI preferences
+live in browser local storage. The sidebar has chats, Tools, Skills, Artifacts,
+Usage and Memory; every non-chat view has a **← Chat** arrow.
 
 ---
 
-## Interface architecture
+## Troubleshooting
 
-```
-web/index.html      semantic shell, one inline SVG icon set
-web/style.css       design tokens, surfaces, components, responsive rules
-web/app.js          state, custom dropdowns, SSE streaming, views, memory UI
-```
-
-No framework, no build step, no bundled assets. The frontend speaks only to
-the existing `/api/*` routes; adding a real tool later means filling an
-already-designed card, not redesigning the shell.
-
-```bash
-uv run python server.py     # http://localhost:7777
-atlas web                   # starts the server and opens it
-```
-
-Running `main.py` interactively also asks whether to open the Web GUI. Choose
-`yes` once, or use `atlas web` as the shortcut next time. An auto-opened server
-stops a few seconds after its browser tab closes, so localhost is not left
-behind. Use `uv run python server.py --stay-open` only when you deliberately
-want a server that survives browser tabs and stops with `Ctrl+C`.
-
-<!-- ![web](docs/media/web.png) -->
-
-One stdlib HTTP server, one HTML file, vanilla JS, no build step. Streams
-tokens over SSE, keeps every chat in SQLite, shows notes/chats/turns in the
-sidebar.
-
-`⌘K` new chat · `↵` send · `⇧↵` newline · `esc` stop · double-click a title
-to rename.
-
----
-
-## Working tools
-
-Three tools are live in chat and on the CLI. See **[docs/tools.md](docs/tools.md)** for the security model.
-
-| Tool | What it does | CLI |
-|---|---|---|
-| Web search | DuckDuckGo results, no key (Brave optional) | `atlas net search "query"` |
-| Web fetch | Readable text from a public page, with source URL | `atlas net fetch https://…` |
-| Files | Read / write / list / mkdir / move / delete in the workspace | `atlas fs read path` |
-| Terminal | Allowlisted `ls`, `git status`, `git log`, … | `atlas term ls` |
-| Git | Local status / diff / log | `atlas tools run git_status` |
-
-Network calls are pinned to public IPs with SSRF checks on every redirect. Filesystem access is confined to an explicit workspace; hidden files, keys, symlinks and path traversal are refused. Tool output is treated as untrusted data, never as instructions.
-
-```bash
-atlas tools                              # status of every tool
-atlas tools configure --workspace ~/dev/project
-atlas net search "Python lists tutorial" --limit 3
-atlas net fetch https://example.com
-atlas term git status --short
-atlas fm write notes/hello.txt --text hello
-atlas fs read notes/hello.txt
-uv run python -m unittest discover -s tests -v   # 52 offline tests
-```
-
----
-
-## Local data vs the public repo
-
-This repository contains **only code, skills and docs**. Your memories, chats,
-artifacts, workspace path, `.env` and downloaded models stay in gitignored
-folders (`data/`, `notes/`, `.venv/`, `vendor/`). `context.py` reads that local
-state at runtime; no personal facts are written into source files — a test
-enforces this. Anyone can clone this repo, point Atlas at their own Ollama or
-LM Studio models, and get their own private agent.
-
----
-
-## Agent runtime
-
-Atlas now runs a bounded agent loop: select a skill, call tools, inspect
-results, call more tools, answer. Skills are instruction files in
-`skills/<id>/SKILL.md`, loaded only when needed. Tools are declared in one
-registry that drives the model, CLI, API and GUI. Writes require an explicit
-Allow; DENY tools are never advertised. See **[docs/agent.md](docs/agent.md)**.
-
-```bash
-atlas tools                              # registry-driven tool list + permissions
-atlas tools permissions
-atlas skills list | show web-research
-atlas artifacts list
-atlas workspace                          # root, repo, branch, clean/dirty
-```
-
----
-
-## How memory works
-
-```
-your message
-   ├─▶ chat(messages, tools)      answers you; may call remember()
-   └─▶ librarian(message)         JSON: "what is durable here?"   (guaranteed)
-             │
-             ▼  3 guards: stated · not meta · grounded in your words
-        notes/*.md  ← human-readable, editable, one fact each
-             │
-             ▼  consolidate.py (nightly)
-        notes/_digest.md  ← compressed, always in context
-```
-
-Why two calls? A 3B model calls tools reliably about half the time. If memory
-depended on it *choosing* to save something, facts would vanish silently.
-
-Why guards? Without them a small model writes *"the user wants to learn about
-pointers"* into permanent memory — and then believes it forever.
-
-Generated files start with `_` and are excluded from recall. **Inference never
-becomes memory.**
-
-For an explicit write, without model extraction:
-
-```bash
-atlas remember "I am learning Rust."
-```
-
----
-
-## Slash palette and goals
-
-Type `/` in the composer to see skills and commands. Pick a skill to load its
-instructions for that turn, or use `/goal <objective>` to give the agent a goal
-to work toward with real tools and bounded steps.
-
-```bash
-atlas goal set "inspect the repo and summarize the last commit"
-atlas goal status
-atlas goal clear
-```
-
----
-
-## One agent, not modes
-
-Atlas has **one** mode: agent. Study, research, code and memory are skills the
-agent loads when needed, not separate personas. There is no mode switcher.
-
-```bash
-atlas                              # unified agent
-atlas study "explain derivatives"  # one-shot study session
-atlas agents roles                 # orchestrator roles
-atlas agents plan "study this function"
-atlas agents create WS ~/devAI/AtlasWSPC
-atlas agents run WS --port 7778    # isolated instance
-atlas agents list
-```
-
-Study writes comprehensive notes to the workspace, makes large summaries, and
-draws real function plots with `plot_function` (`x**2`, `sin(x)`, …) — all
-parsed safely, no code execution. See **[docs/agent.md](docs/agent.md)**.
-
-### Multiple instances
-
-Each instance gets its own workspace, SQLite data and notes folder, so you can
-run several Atlas processes for different projects without sharing memory.
-Set `ATLAS_DATA_DIR` / `ATLAS_WORKSPACE` for manual isolation; `atlas agents run`
-does both automatically.
-
----
-
-## Modes
-
-| Mode | Use it when |
+| Symptom | Fix |
 |---|---|
-| `coach` | you need to be honest about how the week went |
-| `tutor` | learning something and want to be quizzed, not lectured at |
-| `review` | Sunday: what the commits say vs. what you say |
-| `debug` | stuck; hypotheses before fixes |
-| `plan` | the week has no shape |
+| `Missing credentials` / `OpenAIError` on startup | Update to this version (empty API keys are now replaced with a local placeholder). For local Ollama set `ATLAS_API_KEY=ollama` in `.env`. |
+| `Ollama is not reachable` | `ollama serve` or `brew services start ollama`; confirm `curl http://127.0.0.1:11434/api/tags` |
+| `... is not installed. Run: ollama pull ...` | Run the exact `ollama pull <model>` line from `check.py`, then re-run the doctor |
+| Port occupied (`11434`, `1234`, `8080`, `8000`) | Stop the conflicting process, or set `ATLAS_OLLAMA_URL` / another provider URL / `ATLAS_BASE_URL` to a free port |
+| `no .env` / config missing | `cp .env.example .env`, set `ATLAS_MODEL` and your provider, then `uv run python check.py` |
+| Model answers but never remembers | Check the `memory extraction` line; use `atlas remember "..."` for explicit writes |
+| Recall feels weak | `ollama pull nomic-embed-text`, or use `ATLAS_RETRIEVAL=keyword` offline |
+| Filesystem/terminal tools say *not configured* | `atlas tools configure --workspace ~/dev` or set `ATLAS_WORKSPACE`; this is by design |
+| Empty reply from a reasoning model | Raise `ATLAS_MAX_TOKENS` (e.g. `1024`); thinking consumes output tokens |
+| `uv: command not found` | Install [uv](https://docs.astral.sh/uv/) (`brew install uv`) |
 
-```
-atlas tutor          # switch hat
-/mode debug          # or mid-conversation
-/frontier            # optional: send just this question to a paid model
-```
-
----
-
-## Use a GPU on your LAN (optional)
-
-Better answers, same memory:
-
-```powershell
-# Windows laptop with an RTX 2060
-.\install.ps1        # portable ollama, LAN bind, firewall, model
-```
-
-It prints one line for the client's `.env`:
-
-```ini
-ATLAS_BASE_URL=http://your-gpu-host:11434/v1
-ATLAS_MODEL=qwen2.5:7b
-```
-
-Mac stays the brain, GPU becomes the muscle. Laptop asleep? Falls back to the
-local 3B.
+For older platform notes see [SETUP-MAC.md](SETUP-MAC.md) and
+[SETUP-WINDOWS.md](SETUP-WINDOWS.md).
 
 ---
 
-## Benchmarks
+## Privacy & security
 
-Measured on an 8 GB M1 with `qwen2.5:3b`, not estimated:
-
-| measurement | result |
-|---|---|
-| tool call, native JSON | 12/16 · 75% |
-| tool call, usable after salvage | 12/16 · 75% |
-| retrieval recall@5 | 5/5 |
-| latency, median | 2.14 s |
-
-Reproduce on your own hardware, or compare a different model:
-
-```bash
-atlas bench
-atlas bench --model qwen2.5:7b --out docs/bench-7b.json
-```
-
-The 3-in-4 failure rate is why `main.py` has a deterministic extraction pass
-and `librarian.py` has guards. Full output: `docs/bench.json`.
-
----
-
-## Profiles and memory
-
-Atlas keeps memory per local profile, never in the model weights. Switching
-models never changes what you remember; switching profiles isolates it.
-
-```bash
-atlas user list
-atlas user create "Friend"          # returns an id
-atlas user switch u-xxxxxxxx
-atlas memory list                   # 0 for a fresh profile
-atlas memory search "tennis ranking"
-atlas memory add projects "Side project: grid renderer in C"
-atlas memory correct 19 "Updated fact"
-atlas memory forget 19
-atlas memory import                 # loads notes/*-seed-*.md into this profile
-atlas memory export                 # JSON, all your data
-atlas memory clear --yes
-```
-
-In the web UI the profile selector sits above the stats in the sidebar; the
-**mem** button opens the memory inspector, where you can add, filter and
-forget facts. When a reply uses stored context, the chat shows a small
-"used N saved memories" line. Secrets (keys, passwords, tokens, `.env`) are
-rejected before they can be stored, and an empty profile gets a deterministic
-"I don't have that saved" instead of a guessed identity.
-
-Full design and schema: `docs/memory.md`.
-
----
-
-## Bring your own model
-
-Atlas talks to anything that speaks the OpenAI chat-completions API: Ollama,
-LM Studio, llama.cpp, vLLM, OpenRouter, or a GPU box on your LAN.
-
-```bash
-atlas models                                  # detected runtimes + installed models
-atlas models --runtime lmstudio               # point at LM Studio's default port
-atlas use qwen2.5:7b                          # switch the default
-atlas models --endpoint http://127.0.0.1:1234/v1 --use local-model
-atlas models --pull qwen2.5:7b                # download with Ollama
-```
-
-Or click **⚙** in the web UI to set the endpoint, key, and model, and use the
-**model dropdown** to pick a model per chat. No restart needed — choices live
-in `data/settings.json`, not in the code. Embedding models are hidden from the
-picker.
-
----
-
-## Six-month program
-
-`training/` contains a 26-week plan for turning the vault into a model of you:
-daily prompts, weekly reviews, prediction scoring, and a 20-question eval.
-No fine-tuning — just better memory.
-
-Start with [`training/README.md`](training/README.md).
-
----
-
-## FAQ
-
-**Does it send my data anywhere?** Not by default. Ollama is local, memory is
-local. Only if you configure a frontier provider.
-
-**Will it run on 8 GB?** Yes — that's the target machine. A 3B model plus
-embeddings fits comfortably.
-
-**Can I use my own model?** Yes. Set `ATLAS_BASE_URL`, `ATLAS_API_KEY`, and
-`ATLAS_MODEL`. Atlas keeps the same Markdown memory when the model changes.
-
-**Is this a fine-tune?** No. Memory, not weights. That's why swapping models
-doesn't lose your history.
-
-**Why not LangChain?** You can't debug a harness you didn't write.
-
-**Is it production-ready?** No. It's a single-user tool that you maintain.
-That's the trade for owning it.
-
----
-
-## Privacy
-
-`notes/` and `data/` are gitignored. **This repo ships code, not memories.**
-If you fork it, keep your vault private.
+`data/` and `notes/` are gitignored; Git history contains no `.env`, database,
+chat history, personal memory or model weights. Network calls are pinned with
+SSRF checks on redirects; filesystem access is confined to an explicit
+workspace. Secrets are rejected before they can be stored as memory. No
+telemetry, sync or remote auth. `COSTS.md` explains the optional frontier tier.
 
 ## License
 

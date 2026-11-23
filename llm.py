@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from openai import OpenAI
 
+import config
 import models
 from config import (
     FRONTIER_API_KEY,
@@ -34,6 +35,10 @@ _no_tools: set[str] = set()
 
 
 def _client(base_url: str, api_key: str) -> OpenAI:
+    # openai >= 3.42 refuses an empty api_key. Local servers ignore the value,
+    # so a non-empty placeholder is enough. This also covers auto-detection,
+    # which deliberately does not read a key from disk.
+    api_key = api_key or config.API_KEY or "ollama"
     key = (base_url, api_key)
     client = _clients.get(key)
     if client is None:

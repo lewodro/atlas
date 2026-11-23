@@ -146,11 +146,15 @@ class FilesystemTools(unittest.TestCase):
 
 class ToolDispatch(unittest.TestCase):
     def test_new_tools_are_registered(self):
-        names = {t["function"]["name"] for t in main.TOOLS}
+        # Tool availability depends on a configured workspace. Tests must not
+        # inherit the developer machine's local config.
+        with patch.object(fstools, "status", return_value={"available": True, "workspace": "/tmp"}):
+            names = {t["function"]["name"] for t in main.tool_definitions()}
         self.assertTrue({"web_search", "web_fetch", "files"} <= names)
 
     def test_run_tool_dispatches(self):
-        with patch.object(main.webtools, "format_search", return_value="SEARCH OK"), \
+        with patch.object(fstools, "status", return_value={"available": True, "workspace": "/tmp"}), \
+             patch.object(main.webtools, "format_search", return_value="SEARCH OK"), \
              patch.object(main.webtools, "fetch_page", return_value="FETCH OK"), \
              patch.object(main.fstools, "read", return_value="READ OK"):
             self.assertEqual(main.run_tool("web_search", {"query": "x"}), "SEARCH OK")

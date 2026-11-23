@@ -33,6 +33,11 @@ CATEGORIES = {
     "tennis", "tennis-goals", "ambitions", "audio", "memory-rules",
 }
 
+#: Private backup format written by `atlas memory export FILE`. A file is just
+#: JSON you can copy between machines — nothing is uploaded, no GitHub needed.
+FORMAT = "atlas-memory"
+VERSION = 1
+
 # Generic question → category hints. No personal data lives here.
 HINTS = {
     "study": "education", "studies": "education", "studying": "education", "student": "education",
@@ -382,7 +387,141 @@ def forget(memory_id: int, user: str) -> bool:
 
 
 def export(user: str) -> dict:
-    return {"profile": active(), "memories": list_all(user)}
+    """A versioned, private backup of one profile's durable memories."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT id, name FROM profiles WHERE id = ?", (user,)
+        ).fetchone()
+    profile = {"id": user, "name": row["name"] if row else user}
+    return {
+        "format": FORMAT,
+        "version": VERSION,
+        "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "profile": profile,
+        "memories": list_all(user),
+    }
+
+
+def _number(value, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def import_data(payload: dict, user: str | None = None) -> dict:
+    """Import a backup. Validates, preserves ids/categories, never duplicates.
+
+    Accepts the current `atlas memory export` format and the older bare
+    ``{"profile": "...", "memories": [...]}`` shape. Returns counts for a
+    clear CLI report. Two backups imported twice produce no extra rows.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("memory file must contain a JSON object")
+    fmt = payload.get("format")
+    if fmt is not None and fmt != FORMAT:
+        raise ValueError(f"unsupported memory format {fmt!r}; expected {FORMAT!r}")
+    version = _number(payload.get("version", VERSION), -1)
+    if version < 1:
+        raise ValueError(f"invalid memory file version {payload.get('version')!r}")
+    if version > VERSION:
+        raise ValueError(
+            f"memory file version {int(version)} is newer than this Atlas "
+            f"(supports up to {VERSION}) — update Atlas first"
+        )
+    items = payload.get("memories")
+    if not isinstance(items, list):
+        raise ValueError("memory file is missing a 'memories' list")
+
+    profile = payload.get("profile") or {}
+    if isinstance(profile, str):  # legacy export stored just the profile id
+        profile = {"id": profile}
+    if not isinstance(profile, dict):
+        raise ValueError("memory file has an invalid 'profile' field")
+    target = str(user or profile.get("id") or active()).strip() or DEFAULT
+    name = str(profile.get("name") or target)
+
+    with _conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO profiles (id, name) VALUES (?, ?)",
+            (target, name),
+        )
+        known_ids = {row[0] for row in conn.execute("SELECT id FROM memories")}
+        existing = [
+            (row["id"], _words(row["content"]))
+            for row in conn.execute(
+                "SELECT id, content FROM memories WHERE user_id = ?", (target,)
+            )
+        ]
+
+    counts = {"imported": 0, "duplicates": 0, "skipped": 0}
+    for item in items:
+        if not isinstance(item, dict):
+            counts["skipped"] += 1
+            continue
+        content = str(item.get("content") or "").strip()
+        category = str(item.get("category") or "identity").strip() or "identity"
+        if not content:
+            counts["skipped"] += 1
+            continue
+        try:
+            content = _safe(content)  # never import a secret from a backup
+        except ValueError:
+            counts["skipped"] += 1
+            continue
+
+        raw_id = item.get("id")
+        try:
+            memory_id = int(raw_id) if raw_id is not None else None
+        except (TypeError, ValueError):
+            memory_id = None
+        if memory_id is not None and memory_id in known_ids:
+            # The id already exists elsewhere in this database (e.g. importing
+            # into a second profile on the same machine). Keep the content and
+            # category; let SQLite assign a fresh id. Content dedupe below still
+            # prevents true duplicates within the target profile.
+            memory_id = None
+
+        wanted = _words(content)
+        if any(
+            not wanted or not have or len(wanted & have) / len(wanted | have) >= 0.95
+            for _, have in existing
+        ):
+            counts["duplicates"] += 1
+            continue
+
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        columns = [
+            "user_id", "category", "content", "source", "confidence",
+            "importance", "expires", "created", "updated",
+        ]
+        values = [
+            target, category, content, str(item.get("source") or "import"),
+            _number(item.get("confidence"), 0.8),
+            _number(item.get("importance"), 0.5),
+            item.get("expires"), item.get("created") or stamp,
+            item.get("updated") or stamp,
+        ]
+        if memory_id is not None:
+            columns.insert(0, "id")
+            values.insert(0, memory_id)
+        try:
+            with _conn() as conn:
+                cursor = conn.execute(
+                    f"INSERT INTO memories ({', '.join(columns)}) "
+                    f"VALUES ({', '.join('?' for _ in values)})",
+                    values,
+                )
+                new_id = cursor.lastrowid
+                _sync_fts(conn, new_id, content, category)
+        except sqlite3.IntegrityError:
+            counts["skipped"] += 1  # id collided with another profile's row
+            continue
+        known_ids.add(new_id)
+        existing.append((new_id, wanted))
+        counts["imported"] += 1
+
+    return {"profile": target, **counts}
 
 
 def clear(user: str) -> int:

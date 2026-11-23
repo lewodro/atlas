@@ -47,14 +47,20 @@ def parse(path: Path) -> dict:
     }
 
 
-def main() -> None:
+def main(folder: str | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--user", default=profiles.active())
     parser.add_argument("--folder", default=str(ROOT / "notes"))
     args = parser.parse_args()
+    target = folder or args.folder
 
+    source = Path(target)
+    notes = (
+        sorted(source.glob("*-seed-*.md")) if source.is_dir()
+        else [source] if source.is_file() else []
+    )
     counts = {"saved": 0, "known": 0, "updated": 0}
-    for path in sorted(Path(args.folder).glob("*-seed-*.md")):
+    for path in notes:
         item = parse(path)
         if not item:
             print(f"skip {path.name}: not a recognised seed note")

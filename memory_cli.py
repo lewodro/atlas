@@ -43,8 +43,10 @@ def main() -> None:
     forget = mem_sub.add_parser("forget")
     forget.add_argument("id", type=int)
     imp = mem_sub.add_parser("import")
-    imp.add_argument("file", nargs="?")
-    mem_sub.add_parser("export")
+    imp.add_argument("file", nargs="?",
+                     help="JSON backup from `atlas memory export FILE`, or a seed-note folder")
+    exp = mem_sub.add_parser("export")
+    exp.add_argument("file", nargs="?", help="write the JSON backup here (default: stdout)")
     clear = mem_sub.add_parser("clear")
     clear.add_argument("--yes", action="store_true")
 
@@ -81,19 +83,40 @@ def main() -> None:
     elif args.action == "forget":
         print("forgot" if profiles.forget(args.id, user_id) else "no such memory")
     elif args.action == "export":
-        print(json.dumps(profiles.export(user_id), indent=2, ensure_ascii=False))
-    elif args.action == "import":
-        from importlib.util import module_from_spec, spec_from_file_location
         from pathlib import Path
 
-        module_file = Path(args.file) if args.file else (
-            Path(__file__).parent / "scripts" / "import_seed.py"
-        )
-        spec = spec_from_file_location("import_seed", module_file)
-        module = module_from_spec(spec)
-        spec.loader.exec_module(module)
-        sys.argv = ["import_seed"] + ([args.file] if args.file else [])
-        module.main()
+        data = profiles.export(user_id)
+        if args.file:
+            path = Path(args.file).expanduser()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+            print(f"exported {len(data['memories'])} memories from profile "
+                  f"{user_id} to {path}")
+        else:
+            print(json.dumps(data, indent=2, ensure_ascii=False))
+    elif args.action == "import":
+        from pathlib import Path
+
+        path = Path(args.file).expanduser() if args.file else None
+        if path and path.suffix.lower() == ".json":
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except OSError as exc:
+                sys.exit(f"cannot read {path}: {exc}")
+            except json.JSONDecodeError as exc:
+                sys.exit(f"{path} is not valid JSON: {exc}")
+            try:
+                result = profiles.import_data(payload)
+            except ValueError as exc:
+                sys.exit(f"invalid memory file: {exc}")
+            print(f"imported {result['imported']}, duplicates {result['duplicates']}, "
+                  f"skipped {result['skipped']} · profile {result['profile']}")
+        else:
+            # Legacy Markdown seed notes; no arbitrary code is executed.
+            from scripts import import_seed
+            import_seed.main(folder=str(path) if path else None)
     elif args.action == "clear":
         if not args.yes:
             sys.exit("refusing to clear without --yes")
