@@ -153,6 +153,9 @@ def main() -> int:
     orch.add_argument("--workers", nargs="*", default=None)
     orch.add_argument("--workspace", default="", help="target project folder")
     orch.add_argument("--no-synthesis", action="store_true")
+    orch.add_argument("--sequential", action="store_true",
+                      help="run workers in order so they can exchange files")
+    orch.add_argument("--timeout", type=int, default=240)
 
     gh = sub.add_parser("github", help="read-only GitHub queries")
     gh_sub = gh.add_subparsers(dest="action", required=True)
@@ -294,6 +297,8 @@ def main() -> int:
             result = dispatch.orchestrate(
                 " ".join(args.goal), args.workers,
                 workspace=args.workspace,
+                sequential=args.sequential,
+                timeout=args.timeout,
                 synthesize=not args.no_synthesis,
             )
             print(result["answer"] or json.dumps(result, indent=2, ensure_ascii=False))
