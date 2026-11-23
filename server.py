@@ -34,6 +34,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import activity
+import agent
 import artifacts
 import freshness
 import fstools
@@ -177,6 +178,8 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     if fresh:
         skill_id = "web-research"
     tracker = freshness.Tracker(fresh, label)
+    steps = 0
+    planned = False
 
     role = orchestrator.select_role(clean)
     system = build_system(mode, clean, skill_id)
@@ -269,6 +272,39 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                 if nudge:
                     messages.append({"role": "user", "content": nudge})
                     continue
+                if not planned and steps == 0 and not tracker.blocked():
+                    planned = True
+                    action_plan = agent.plan(clean)
+                    if action_plan["actions"]:
+                        steps += len(action_plan["actions"])
+                        done = agent.execute(action_plan["actions"])
+                        for item in done:
+                            messages.append({"role": "assistant", "content": "", "tool_calls": [{
+                                "id": item["id"], "type": "function",
+                                "function": {"name": item["name"],
+                                             "arguments": json.dumps(item["args"])},
+                            }]})
+                            messages.append({"role": "tool", "tool_call_id": item["id"],
+                                             "content": item["text"]})
+                            yield ("tool", {"name": item["name"], "result": item["text"],
+                                            "ok": item["ok"],
+                                            "status": "ok" if item["ok"] else "error",
+                                            "args": json.dumps(item["args"])[:220]})
+                        report = [
+                            {"role": "system", "content": agent.REPORT_SYSTEM},
+                            {"role": "user", "content":
+                             "User request: " + clean + "\n\nCompleted tool results:\n"
+                             + "\n".join(f"- {i['name']}: {i['text'][:400]}" for i in done)
+                             + "\n\nReport concisely in past tense."},
+                        ]
+                        from llm import chat as plain
+                        reply = plain(report, None, model=model)
+                        text = (reply.content or action_plan["answer"] or "Done.").strip()
+                        answer_parts = [text]
+                        yield ("delta", {"text": text})
+                        yield ("research", {**tracker.summary(), "actions": len(done),
+                                            "period": label})
+                        break
                 answer_parts.append(content)
                 break
 
@@ -307,6 +343,7 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                                     "ok": False, "status": "denied"})
                 else:
                     result = registry.run(call["name"], args, approved=True)
+                    steps += 1
                     tracker.note_call(call["name"])
                     tracker.note_result(call["name"], result["ok"], registry.content(result))
                     if call["name"] == "web_fetch":

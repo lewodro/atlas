@@ -124,6 +124,20 @@ excluded from durable memory by a deterministic librarian guard.
 `uv run python eval/run_web_eval.py` checks the classifier offline; add
 `--live` to exercise the configured local model and real web tools.
 
+## Code actions
+
+Models that cannot emit native tool calls still act through `agent.py`: one
+bounded JSON plan per turn (max three validated actions), executed by the
+harness inside `fstools.workspace()`. A fresh clone defaults that workspace to
+the Atlas checkout; override with `ATLAS_WORKSPACE`. Writes and `mkdir` are
+allowed inside the workspace, moves/deletes ask, generated Python is syntax-
+checked with one repair retry, and `python <script.py>` can be run through the
+allowlisted terminal. Tool results are reported from a fresh, grounded final
+turn so the model cannot revert to step-by-step instructions. Task details are
+excluded from durable memory. Reasoning checkpoints get a 4096-token ceiling
+(`ATLAS_REASONING_TOKENS`), normal models 1024 (`ATLAS_MAX_TOKENS`), with one
+bounded retry — never infinite generation.
+
 ## Fine-tuning for small models
 
 No weights are changed. The prompt is tuned instead:

@@ -80,9 +80,11 @@ def plausible(fact: str, message: str) -> bool:
 
 def extract(message: str, limit: int = 3) -> list[str]:
     """Durable facts from one user message. Never raises."""
-    # A research topic / date is temporary task context, never a memory —
-    # deterministic so a small model cannot leak it into the vault.
-    if freshness.required(message):
+    # Research topics and code-agent tasks are temporary context, never memory
+    # — deterministic so a small model cannot leak task details into the vault.
+    import agent
+
+    if freshness.required(message) or agent.needs_actions(message):
         return []
     message = statements(message)
     if len(message) < 12:

@@ -546,6 +546,7 @@ function researchLine(payload) {
   const parts = [];
   if (payload.searches) parts.push(`Searched web ${payload.searches}×`);
   if (payload.fetches) parts.push(`Fetched ${payload.fetches} source${payload.fetches === 1 ? "" : "s"}`);
+  if (payload.actions) parts.push(`Ran ${payload.actions} agent action${payload.actions === 1 ? "" : "s"}`);
   if (!parts.length) parts.push("Web research could not be verified");
   el.innerHTML = `${icon("spark")} ${parts.join(" · ")}`;
   $("#messages").appendChild(el);

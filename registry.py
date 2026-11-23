@@ -341,8 +341,10 @@ def register_builtins() -> None:
             "content": {"type": "string", "description": "Required for write."}},
             "required": ["action", "path"]},
         handler=_file_manager, category="filesystem", provider="atlas",
-        permission=lambda args: ("ALLOW" if str(args.get("action", "")).lower()
-                                 in ("list", "read") else "ASK"),
+        # The workspace itself is the boundary: reads and writes stay confined
+        # and hidden files are refused, so only destructive moves/deletes ask.
+        permission=lambda args: ("ASK" if str(args.get("action", "")).lower()
+                                 in ("delete", "move") else "ALLOW"),
         available=lambda: fstools.status()["available"],
     ))
     register(ToolSpec(

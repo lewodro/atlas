@@ -61,12 +61,10 @@ def configure_workspace(path: str) -> str:
 
 def workspace() -> Path:
     raw = load_config().get("workspace") or os.getenv("ATLAS_WORKSPACE", "")
-    if not raw:
-        raise ToolError(
-            "Filesystem workspace is not configured. "
-            "Run: atlas tools configure --workspace /path/to/project"
-        )
-    root = Path(raw).expanduser().resolve()
+    # A fresh clone is a code agent too: default to the Atlas checkout. Users
+    # can point ATLAS_WORKSPACE (or `atlas tools configure --workspace`) at a
+    # different project. Confinement and hidden-file refusal still apply.
+    root = Path(raw).expanduser().resolve() if raw else config.ROOT
     if not root.is_dir():
         raise ToolError("configured workspace no longer exists")
     return root
@@ -158,18 +156,10 @@ def list_dir(path: str = ".") -> str:
 
 
 def status() -> dict:
-    data = load_config()
-    configured = bool(data.get("workspace") or os.getenv("ATLAS_WORKSPACE"))
-    result = {
-        "available": configured,
-        "workspace": data.get("workspace") or os.getenv("ATLAS_WORKSPACE", ""),
-    }
-    if configured:
-        try:
-            result["workspace"] = str(workspace())
-        except ToolError as exc:
-            result["available"] = False
-            result["error"] = str(exc)
+    try:
+        result = {"available": True, "workspace": str(workspace())}
+    except ToolError as exc:
+        result = {"available": False, "workspace": "", "error": str(exc)}
     return result
 
 

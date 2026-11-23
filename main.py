@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 import activity
+import agent
 import artifacts
 import context
 import freshness
@@ -146,6 +147,8 @@ def turn(
     messages[0] = {"role": "system", "content": build_system(mode, user_text, skill_id)}
     messages.append({"role": "user", "content": user_text})
     tracker = freshness.Tracker(fresh, label)
+    steps = 0
+    planned = False
 
     def complete(answer: str, *, remember: bool = True) -> str:
         result = finish(answer, user_text, mode)
@@ -223,6 +226,25 @@ def turn(
             if nudge:
                 messages.append({"role": "user", "content": nudge})
                 continue
+            # Models that cannot emit tool calls still get to act: one bounded
+            # JSON plan per turn, executed by the harness inside the workspace.
+            if not planned and steps == 0 and not tracker.blocked():
+                planned = True
+                action_plan = agent.plan(user_text, tier=tier)
+                if action_plan["actions"]:
+                    steps += len(action_plan["actions"])
+                    done = agent.execute(action_plan["actions"])
+                    for item in done:
+                        print(f"  · {item['name']} -> {item['text'][:100]}")
+                    report = [
+                        {"role": "system", "content": agent.REPORT_SYSTEM},
+                        {"role": "user", "content":
+                         "User request: " + user_text + "\n\nCompleted tool results:\n"
+                         + "\n".join(f"- {i['name']}: {i['text'][:400]}" for i in done)
+                         + "\n\nReport concisely in past tense."},
+                    ]
+                    msg = chat(report, None, tier=tier)
+                    return complete(msg.content or action_plan["answer"] or "Done.")
             return complete(content or "(empty reply)")
 
         for call in calls:
@@ -234,6 +256,7 @@ def turn(
             result = registry.run(name, args, approved=approved)
             tool_text = ("Permission denied by user." if result.get("error") == registry.NEEDS_APPROVAL
                          else registry.content(result))
+            steps += 1
             tracker.note_call(name)
             tracker.note_result(name, result["ok"], tool_text)
             print(f"  · {name} -> {tool_text[:100]}")

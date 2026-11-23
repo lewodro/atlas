@@ -34,6 +34,14 @@ _clients: dict[tuple[str, str], OpenAI] = {}
 _no_tools: set[str] = set()
 
 
+def _budget(model: str) -> int:
+    """High ceiling for reasoning checkpoints, modest for normal chat models."""
+    low = str(model or "").lower()
+    if any(hint in low for hint in config.REASONING_HINTS):
+        return config.REASONING_TOKENS
+    return config.MAX_TOKENS
+
+
 def _client(base_url: str, api_key: str) -> OpenAI:
     # openai >= 3.42 refuses an empty api_key. Local servers ignore the value,
     # so a non-empty placeholder is enough. This also covers auto-detection,
@@ -81,7 +89,7 @@ def chat(
     # Bound generation: without this, some local runtimes stream indefinitely
     # and saturate the model server after a few agent turns.
     temperature = options.pop("temperature", 0.4)
-    cap = options.setdefault("max_tokens", config.MAX_TOKENS)
+    cap = options.setdefault("max_tokens", _budget(name))
 
     try:
         response = client.chat.completions.create(
@@ -103,8 +111,8 @@ def chat(
     # Reasoning models can spend the whole budget thinking and return no text.
     # One bounded retry at a larger cap fixes that without an unbounded server.
     if (not (message.content or "").strip()
-            and getattr(choice, "finish_reason", None) == "length" and cap < 2048):
-        options["max_tokens"] = min(cap * 2, 2048)
+            and getattr(choice, "finish_reason", None) == "length" and cap < 8192):
+        options["max_tokens"] = min(cap * 2, 8192)
         return chat(messages, tools, tier=tier, model=model,
                     temperature=temperature, **options)
     return message
@@ -121,7 +129,7 @@ def stream_chat(
     client, default_model = active(tier)
     name = model or default_model
     use_tools = tools if name not in _no_tools else None
-    options.setdefault("max_tokens", config.MAX_TOKENS)
+    options.setdefault("max_tokens", _budget(name))
 
     try:
         return client.chat.completions.create(

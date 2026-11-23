@@ -120,7 +120,13 @@ MODEL = os.getenv("ATLAS_MODEL") or (
 
 # Keep local answers bounded. Long generations are the easiest way to make a
 # small model feel slow; users can raise this for larger/custom models.
-MAX_TOKENS = max(64, int(os.getenv("ATLAS_MAX_TOKENS", "512")))
+MAX_TOKENS = max(64, int(os.getenv("ATLAS_MAX_TOKENS", "1024")))
+
+#: Reasoning models (DeepSeek R1, QwQ, o-series, "thinking" checkpoints) need a
+#: much larger budget — they spend most of it thinking before any visible text.
+#: Override either knob in .env; Atlas never generates without a ceiling.
+REASONING_TOKENS = max(MAX_TOKENS, int(os.getenv("ATLAS_REASONING_TOKENS", "4096")))
+REASONING_HINTS = ("r1", "qwq", "think", "o1", "o3", "phi-4-reasoning")
 
 WHERE = f"{'remote GPU' if REMOTE else 'this machine'} @ {BASE_URL}"
 

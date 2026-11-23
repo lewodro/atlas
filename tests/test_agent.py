@@ -69,7 +69,9 @@ class Registry(unittest.TestCase):
             with patch.object(registry, "PERMISSIONS_FILE", root / "permissions.json"), \
                  patch.object(registry, "ACTIVITY_FILE", root / "activity.jsonl"), \
                  patch.object(fstools, "status", return_value={"available": True, "workspace": str(root)}):
-                result = registry.run("files", {"action": "write", "path": "x", "content": "y"})
+                # Writes stay inside the confined workspace; only destructive
+                # actions require an explicit Allow.
+                result = registry.run("files", {"action": "delete", "path": "x"})
                 self.assertEqual(result["error"], registry.NEEDS_APPROVAL)
                 self.assertFalse(result["ok"])
                 registry.set_permission("web_fetch", "DENY")

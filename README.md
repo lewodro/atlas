@@ -84,6 +84,23 @@ uv run python main.py         # interactive chat in the terminal
 Prefer a browser? `uv run python server.py` serves `http://localhost:7777`
 (or `atlas web`, which opens it and stops the server when the tab closes).
 
+**Code agent out of the box.** On a fresh clone the workspace defaults to the
+Atlas checkout, so the agent can read and write files, list directories and run
+allowlisted commands (`ls`, `cat`, `git status`, `python <script.py>`,
+`uv run python <script.py>`) with no extra setup. Point it at another project
+with `atlas tools configure --workspace ~/dev/project` or `ATLAS_WORKSPACE`.
+Writes stay inside that workspace; hidden files and keys are refused, and
+destructive moves/deletes still need an explicit Allow. Models that cannot
+emit native tool calls (e.g. DeepSeek R1 on Ollama) use a bounded JSON action
+planner — one plan per turn, max three validated actions — so they can still
+create and run code. Research topics and code tasks are never saved as memory.
+
+**Deep reasoning, still bounded.** Reasoning checkpoints (DeepSeek R1, QwQ,
+thinking models) get a 4096-token generation ceiling automatically instead of
+the normal 1024, with one bounded retry if they spend it all thinking. Override
+with `ATLAS_REASONING_TOKENS` / `ATLAS_MAX_TOKENS` in `.env`. Generation is
+never unbounded, so a slow model cannot saturate Ollama.
+
 **Current questions actually search the web.** Ask about "latest releases",
 "current prices", "this week's breaches" or "November 2026" and Atlas loads
 `web-research`, runs `web_search` (and `web_fetch` where useful), and grounds

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import sys
 
 import fstools
 
@@ -18,7 +19,8 @@ BAAD = set(";|&$><`\\!*?")
 
 
 def allowed() -> str:
-    return "ls, pwd, cat, tree, git status, git log, git diff, git branch"
+    return ("ls, pwd, cat, tree, git status, git log, git diff, git branch, "
+            "python <script.py>, uv run python <script.py>")
 
 
 def run(command: str) -> str:
@@ -54,6 +56,17 @@ def run(command: str) -> str:
         return fstools.read(rest[0])
     if name == "tree":
         return _tree(rest[0] if rest else ".")
+    if name in ("python", "python3", "uv"):
+        if name == "uv":
+            if rest[:2] != ["run", "python"]:
+                raise fstools.ToolError("only 'uv run python <script.py>' is allowed")
+            rest = rest[2:]
+        if len(rest) != 1:
+            raise fstools.ToolError("python takes exactly one script path")
+        script = fstools._safe_path(rest[0])
+        if script.suffix != ".py":
+            raise fstools.ToolError("only .py scripts can be run")
+        return _execute([sys.executable, str(script)], root)
     if name == "git":
         return _git(rest, root)
     raise fstools.ToolError(
