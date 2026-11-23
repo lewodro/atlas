@@ -22,6 +22,7 @@ from pathlib import Path
 import activity
 import artifacts
 import context
+import depth
 import fstools
 import librarian
 import netguard
@@ -76,6 +77,7 @@ def build_system(mode: str, user_text: str, skill_id: str | None = None) -> str:
     # Project skills must reason from tool results, not from a global scan of ~/dev.
     activity = "" if any(s in skill_ids for s in ("project-explorer", "github-engineer")) else activity_block()
     prompt = modes.build(mode, notes, activity)
+    prompt += "\n\n" + depth.instruction(user_text)
     prompt += f"\n\nAGENT ROLE: {plan['role']}"
     local_card = context.card(user_text, skill_id)
     if local_card:

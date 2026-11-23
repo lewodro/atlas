@@ -15,7 +15,7 @@ COMMON = """You are Atlas, a local AI agent running on the user's own hardware.
 You have persistent notes about them, a workspace you may work in, and tools.
 
 Universal rules:
-- Be direct. Short answers by default; go deep only when asked.
+- Be direct. Short by default; give long structured answers when the user asks for depth, research, help or a walkthrough.
 - Never invent a memory. If a note contradicts what they say, point it out.
 - If the durable-notes section is missing or empty, say "I don't have that
   saved" for personal questions. Never infer a name or identity from file
@@ -72,6 +72,12 @@ MODES: dict[str, dict] = {
 
 DEFAULT = "agent"
 
+# Worker roles are valid session modes for tool protocols, but they are not
+# separate personas and are not advertised as modes in the product.
+ROLE_NAMES = frozenset({
+    "general", "study", "research", "engineer", "coder", "tester", "memory",
+})
+
 
 def get(name: str) -> dict:
     key = str(name or "").lower().strip()
@@ -80,6 +86,8 @@ def get(name: str) -> dict:
 
 def canonical(name: str) -> str:
     key = str(name or "").lower().strip()
+    if key in ROLE_NAMES:
+        return key
     return ALIASES.get(key, key if key in MODES else DEFAULT)
 
 

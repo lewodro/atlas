@@ -21,7 +21,7 @@ The goal is high understanding with few tokens — not long walls of text.
    - use a small table for comparisons
 4. **Check** — one question that tests understanding, not recall.
 
-Keep it under 250 words unless the user asks for a full document.
+Keep it short unless the user asks for a detailed answer; then use sections and up to 900 words unless the user asks for a full document.
 Never say "it's simple" or "just". Never dump five alternatives.
 
 ## Large summaries

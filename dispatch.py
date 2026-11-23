@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import depth
 import llm
 import workers
 
@@ -19,11 +20,13 @@ ROLE_TASK = {
     "engineer": "Inspect the workspace with tools and report concrete findings for: {goal}",
     "study": "Create concise study notes and one check question for: {goal}",
     "memory": "Recall stored personal context relevant to: {goal}. Do not guess.",
+    "coder": "Build this project in the shared workspace. Write real files with the files tool, then call handoff to the tester with the exact file names and what to test: {goal}",
+    "tester": "Read HANDOFF.md with handoff_read, inspect the named files, run them with code_execute, write TEST_REPORT.md, then call handoff back to the builder with reproduced bugs: {goal}",
     "general": "{goal}",
 }
 
 SYSTEM = """You are the coordinator of several local Atlas workers.
-Combine their reports into one clear answer in under 250 words.
+Combine their reports into one clear, accurate answer. Match the requested depth.
 - Keep only facts present in the reports. Never invent a source or number.
 - If workers disagree, say so and give both claims.
 - Name the source URLs that workers actually returned.
@@ -32,7 +35,7 @@ Combine their reports into one clear answer in under 250 words.
 
 def orchestrate(goal: str, worker_ids: list[str] | None = None,
                 synthesize: bool = True, timeout: int = 240,
-                workspace: str = "") -> dict:
+                workspace: str = "", sequential: bool = False) -> dict:
     goal = str(goal or "").strip()
     if not goal:
         raise ValueError("goal is empty")
@@ -71,14 +74,17 @@ def orchestrate(goal: str, worker_ids: list[str] | None = None,
         tasks[wid] = task
 
     reports: list[dict] = []
-    with ThreadPoolExecutor(max_workers=len(ids)) as pool:
-        futures = {pool.submit(workers.ask, wid, text): wid
-                   for wid, text in tasks.items()}
-        for future in as_completed(futures, timeout=timeout):
-            wid = futures[future]
+
+    if sequential:
+        previous = None
+        for wid in ids:
             row = available[wid]
+            text = tasks[wid]
+            if previous:
+                text += ("\n\nPrevious agent report (also read HANDOFF.md in the shared "
+                         "workspace for details):\n" + str(previous.get("answer", ""))[:900])
             try:
-                report = future.result()
+                report = workers.ask(wid, text, timeout=timeout)
             except Exception as exc:
                 report = {
                     "worker": wid, "label": row["label"], "role": row["role"],
@@ -86,6 +92,23 @@ def orchestrate(goal: str, worker_ids: list[str] | None = None,
                     "tools": [],
                 }
             reports.append(report)
+            previous = report
+    else:
+        with ThreadPoolExecutor(max_workers=len(ids)) as pool:
+            futures = {pool.submit(workers.ask, wid, text): wid
+                       for wid, text in tasks.items()}
+            for future in as_completed(futures, timeout=timeout):
+                wid = futures[future]
+                row = available[wid]
+                try:
+                    report = future.result()
+                except Exception as exc:
+                    report = {
+                        "worker": wid, "label": row["label"], "role": row["role"],
+                        "model": row["model"], "answer": f"FAILED: {type(exc).__name__}: {exc}",
+                        "tools": [],
+                    }
+                reports.append(report)
 
     answer = ""
     if synthesize and reports:
@@ -95,7 +118,7 @@ def orchestrate(goal: str, worker_ids: list[str] | None = None,
             for r in reports
         )[:9000]
         message = llm.chat(
-            [{"role": "system", "content": SYSTEM},
+            [{"role": "system", "content": SYSTEM + "\n\n" + depth.instruction(goal)},
              {"role": "user", "content": f"GOAL: {goal}\n\nREPORTS:\n{text}"}],
             None,
         )
@@ -104,6 +127,7 @@ def orchestrate(goal: str, worker_ids: list[str] | None = None,
     return {
         "goal": goal,
         "workspace": workspace or None,
+        "sequential": sequential,
         "workers": [r["worker"] for r in reports],
         "reports": reports,
         "answer": answer,
@@ -118,11 +142,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="run a goal across local workers")
     parser.add_argument("goal", nargs="+")
     parser.add_argument("--workers", nargs="*", default=None)
+    parser.add_argument("--workspace", default="")
     parser.add_argument("--no-synthesis", action="store_true")
+    parser.add_argument("--sequential", action="store_true",
+                        help="run workers in order so they can exchange files")
     args = parser.parse_args()
 
     result = orchestrate(" ".join(args.goal), args.workers,
-                         synthesize=not args.no_synthesis)
+                         synthesize=not args.no_synthesis,
+                         workspace=args.workspace,
+                         sequential=args.sequential)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 

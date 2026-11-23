@@ -12,7 +12,7 @@ or anything time-sensitive.
 
 1. Call `recent_research` with topic, category and days (default 60).
 2. Use the digest as evidence. It contains real fetched pages and URLs.
-3. Answer in under 200 words, name at least two source URLs you actually used.
+3. Answer in short unless the user asks for a detailed answer; then use sections and up to 900 words, name at least two source URLs you actually used.
 4. Separate fact from interpretation. Say "as of <date in digest>".
 5. If the digest reports no sources, say so — never invent headlines or numbers.
 

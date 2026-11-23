@@ -42,6 +42,7 @@ import librarian
 import llm
 import memory
 import models
+import depth
 import dispatch
 import modes
 import orchestrator
@@ -185,6 +186,17 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
             yield ("skill", {"id": skill_id, "name": skill["name"], "role": role})
 
     low_clean = clean.lower()
+    if mode == "coder" and "handoff" in low_clean:
+        messages.append({"role": "user", "content":
+            "Write real files with the files tool (at least pacman_game.py and README.md). "
+            "Then call handoff with to='tester' and list every file you wrote."})
+    if mode == "tester" and "handoff" in low_clean:
+        messages.append({"role": "user", "content":
+            "Follow exactly, one tool call per step: (1) handoff_read, "
+            "(2) project_test on the named file, (3) test_report with the real results, "
+            "(4) handoff to='coder' with reproduced issues. "
+            "Do not modify source files. Do not skip steps."})
+
     question_match = re.search(
         r"(?:one|two|three|1|2|3)\s+.*?questions?\s+(?:on|about|for)\s+([a-z0-9][a-z0-9 \-]{1,40})",
         low_clean,
@@ -234,8 +246,13 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     answer_parts: list[str] = []
     fetched_for_skill = False
     git_prompts: set[str] = set()
+    saw_write = False
+    saw_handoff = False
+    saw_report = False
+    tester_steps: set[str] = set()
     try:
-        for _ in range(4):  # bounded multi-tool loop
+        rounds = 6 if mode in ("coder", "tester") else 4
+        for _ in range(rounds):  # bounded multi-tool loop
             content, calls = yield from _tool_round(
                 messages, session_id, user_text, model, tools=[] if question_only else None
             )
@@ -258,6 +275,11 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                     args = json.loads(call["arguments"] or "{}")
                 except json.JSONDecodeError:
                     args = {}
+                if call["name"] == "handoff":
+                    if mode == "coder":
+                        args["to"] = "tester"
+                    elif mode == "tester":
+                        args["to"] = "coder"
                 call_id = call["id"] or f"call_{i}"
                 level = registry.permission(call["name"], args)
                 approved = level != "ASK"
@@ -296,6 +318,41 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                             path=hint.get("path"), chat_id=session_id,
                         )
                         yield ("artifact", item)
+
+                name = call["name"]
+                if name in ("files", "file_manager") and result["ok"]:
+                    saw_write = True
+                if name == "handoff" and result["ok"]:
+                    saw_handoff = True
+                if name == "handoff_read":
+                    tester_steps.add("read")
+                if name == "code_execute" or name == "project_test":
+                    tester_steps.add("exec")
+                if name == "test_report":
+                    saw_report = True
+                if name in ("files", "file_manager") and str(
+                    args.get("path", "")
+                ).lower().find("report") >= 0 and str(
+                    args.get("action", "")
+                ).lower() == "write":
+                    saw_report = True
+
+                if mode == "coder" and saw_write and not saw_handoff:
+                    messages.append({"role": "user", "content":
+                        "Now call handoff with to='tester' and the exact file names."})
+                if mode == "tester" and name == "handoff_read" and "files" not in tester_steps:
+                    tester_steps.add("files")
+                    messages.append({"role": "user", "content":
+                        "Now call project_test on the file named in the handoff note."})
+                if (mode == "tester" and not saw_report
+                        and "exec" in tester_steps and "report_prompt" not in tester_steps):
+                    tester_steps.add("report_prompt")
+                    messages.append({"role": "user", "content":
+                        "Now call test_report with the real results and issues."})
+                if mode == "tester" and saw_report and "back" not in tester_steps:
+                    tester_steps.add("back")
+                    messages.append({"role": "user", "content":
+                        "Now call handoff to='coder' with the reproduced issues."})
 
                 messages.append({
                     "role": "tool", "tool_call_id": call_id, "content": tool_text,
@@ -367,6 +424,20 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                 if (retry.content or "").strip():
                     answer = retry.content.strip()
                     yield ("replace", {"text": answer})
+
+        if depth.is_long(user_text) and len(answer.split()) < 450:
+            expand = llm.chat(
+                [{"role": "system", "content":
+                  "Expand the user's answer to at least 600 words. Keep the same "
+                  "facts and sources. Add sections, concrete examples and a summary. "
+                  "Do not invent new facts."},
+                 {"role": "user", "content": answer}],
+                None, model=model,
+            )
+            expanded = (expand.content or "").strip()
+            if len(expanded.split()) > len(answer.split()):
+                answer = expanded
+                yield ("replace", {"text": answer})
 
         active_goal = goals.current()
         if active_goal:
@@ -651,7 +722,10 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         result = dispatch.orchestrate(
                             goal, body.get("workers"),
-                            workspace=body.get("workspace", ""), synthesize=True,
+                            workspace=body.get("workspace", ""),
+                            sequential=body.get("sequential") is True,
+                            timeout=int(body.get("timeout") or 240),
+                            synthesize=True,
                         )
                         result["session"] = session_id
                         memory.log_turn("assistant", result.get("answer") or "(no answer)",
