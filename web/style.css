@@ -918,3 +918,36 @@ dialog#configure { width: min(760px, 94vw); }
 }
 .goal-line b { color: var(--accent); font-weight: 500; }
 .goal-line svg { width: 13px; height: 13px; vertical-align: -2px; }
+
+/* ------------------------------------------------------------ ATLAS intro */
+
+.intro {
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; place-items: center;
+  background: #000;
+}
+.intro[hidden] { display: none; }
+.intro-mark {
+  font: 600 42px/1 var(--sans);
+  letter-spacing: 0.42em;
+  color: var(--text);
+  opacity: 1;
+  transform: scale(1.35);
+  will-change: transform, opacity;
+}
+.intro.play .intro-mark {
+  animation: atlas-intro 2.1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.intro.play { animation: atlas-intro-bg 2.4s linear forwards; }
+@keyframes atlas-intro {
+  0%   { opacity: 1; transform: scale(1.35); }
+  55%  { opacity: 0.9; transform: scale(0.95); }
+  100% { opacity: 0; transform: scale(0.45); }
+}
+@keyframes atlas-intro-bg {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro.play, .intro.play .intro-mark { animation-duration: .1s; }
+}
