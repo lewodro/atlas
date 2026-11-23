@@ -54,37 +54,9 @@ anywhere.
 
 ---
 
-## Demo
-
-<!-- Record it: see docs/README.md, then uncomment.
-![Atlas demo](docs/media/demo.gif)
--->
-
-```console
-$ atlas
-atlas · life + habits + focus. Keeps you honest.
-      · qwen2.5:7b on remote GPU @ http://your-gpu-host:11434/v1 · 18 notes
-
-[coach]> I'm behind on my C assignment and I keep avoiding it.
-
-atlas> What's the first 10 minutes of it look like — not the whole
-       assignment, just the part you're avoiding.
-
-[coach]> probably just setting up the toolchain again
-
-atlas> Then that's today's task. Setup only. Nothing else.
-       You avoided it because it's boring, not because it's hard.
-
-[coach]> /quit
-```
-
-Two diagrams and the design reasoning: **[docs/architecture.md](docs/architecture.md)**.
-
----
-
 ## Why another AI assistant?
 
-Because the interesting problem isn't the model. It's **memory you can trust.**
+Because the interesting problem isn't the model. Optimization is always different & The problem the **memory you can trust.**
 
 | | Atlas | Hosted assistants |
 |---|---|---|
@@ -93,10 +65,10 @@ Because the interesting problem isn't the model. It's **memory you can trust.**
 | Your memory | files in `notes/` you can edit and delete | vendor's database |
 | Who can read it | you | the vendor |
 | Behaviour changes when | *you* edit the code | *they* ship an update |
-| Model quality | 3B–7B local | frontier |
+| Model quality | ~2B–28B local | frontier |
 
-Atlas is not smarter than Claude. It's **yours** — and it can't be repriced,
-shut down, or trained on your data.
+Atlas is not smarter than Claude. It's **yours**, and it can't be repriced,
+shut down, or trained on your data. 
 
 ---
 
@@ -115,6 +87,7 @@ shut down, or trained on your data.
 - **Five modes**: `coach`, `tutor`, `review`, `debug`, `plan`.
 - **Activity awareness**: reads your `git log` and edited files. No screenshots,
   no keylogger, no cloud.
+- **Orchestration and swarm mode** at your hands.
 - **Runs on 8 GB of RAM.** Or offload the model to a gaming laptop over Wi-Fi.
 - **Swappable models.** Ollama, llama.cpp, vLLM, LM Studio, or another
   OpenAI-compatible endpoint. See **[custom models and speed](docs/custom-models.md)**.
