@@ -5,7 +5,6 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
 [![Local](https://img.shields.io/badge/runs-100%25%20local-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-black)]()
-[![Local data](https://img.shields.io/badge/local%20data-never%20committed-2ea44f)]()
 
 Atlas keeps durable memories in a local SQLite database and plain Markdown,
 retrieves the relevant ones next time, and never sends them anywhere. Memory
