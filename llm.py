@@ -78,22 +78,36 @@ def chat(
     client, default_model = active(tier)
     name = model or default_model
     use_tools = tools if name not in _no_tools else None
+    # Bound generation: without this, some local runtimes stream indefinitely
+    # and saturate the model server after a few agent turns.
+    temperature = options.pop("temperature", 0.4)
+    cap = options.setdefault("max_tokens", config.MAX_TOKENS)
 
     try:
         response = client.chat.completions.create(
             model=name,
             messages=messages,
             tools=use_tools,
-            temperature=options.pop("temperature", 0.4),
+            temperature=temperature,
             **options,
         )
     except Exception as exc:
         if use_tools and _rejects_tools(exc):
             _no_tools.add(name)
-            return chat(messages, None, tier=tier, model=name, **options)
+            return chat(messages, None, tier=tier, model=name,
+                        temperature=temperature, **options)
         raise
 
-    return response.choices[0].message
+    message = response.choices[0].message
+    choice = response.choices[0]
+    # Reasoning models can spend the whole budget thinking and return no text.
+    # One bounded retry at a larger cap fixes that without an unbounded server.
+    if (not (message.content or "").strip()
+            and getattr(choice, "finish_reason", None) == "length" and cap < 2048):
+        options["max_tokens"] = min(cap * 2, 2048)
+        return chat(messages, tools, tier=tier, model=model,
+                    temperature=temperature, **options)
+    return message
 
 
 def stream_chat(
@@ -107,6 +121,7 @@ def stream_chat(
     client, default_model = active(tier)
     name = model or default_model
     use_tools = tools if name not in _no_tools else None
+    options.setdefault("max_tokens", config.MAX_TOKENS)
 
     try:
         return client.chat.completions.create(

@@ -533,8 +533,21 @@ function parseEvent(block) {
 
 function skillLine(name) {
   const el = document.createElement("div");
-  el.className = "tool";
-  el.innerHTML = `${icon("spark")} <b>${esc(name)}</b> skill loaded`;
+  el.className = "tool tool-note";
+  // Loading instructions is not the same as performing research.
+  el.innerHTML = `${icon("spark")} Loaded <b>${esc(name)}</b> instructions`;
+  $("#messages").appendChild(el);
+  scrollDown();
+}
+
+function researchLine(payload) {
+  const el = document.createElement("div");
+  el.className = "tool tool-note";
+  const parts = [];
+  if (payload.searches) parts.push(`Searched web ${payload.searches}×`);
+  if (payload.fetches) parts.push(`Fetched ${payload.fetches} source${payload.fetches === 1 ? "" : "s"}`);
+  if (!parts.length) parts.push("Web research could not be verified");
+  el.innerHTML = `${icon("spark")} ${parts.join(" · ")}`;
   $("#messages").appendChild(el);
   scrollDown();
 }
@@ -583,6 +596,14 @@ function handleEvent(block, reply) {
     reply.text += data.text;
     reply.body.innerHTML = md(reply.text);
     scrollDown();
+  } else if (name === "replace") {
+    // A blocked memory-only answer or a repaired tool call supersedes the
+    // partial text already streamed into the bubble.
+    reply.text = data.text;
+    reply.body.innerHTML = md(reply.text);
+    scrollDown();
+  } else if (name === "research") {
+    researchLine(data);
   } else if (name === "tool") {
     toolLine(data.name, data.result);
   } else if (name === "memory") {

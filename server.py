@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import activity
 import artifacts
+import freshness
 import fstools
 import goals
 import librarian
@@ -45,6 +46,7 @@ import orchestrator
 import profiles
 import registry
 import skills
+import toolcalls
 import workspace
 from config import FRONTIER_READY, MODEL, WHERE
 from llm import stream_chat
@@ -113,16 +115,25 @@ def decide_permission(token: str, allow: bool) -> bool:
 
 
 def _tool_round(messages: list[dict], session_id: str, user_text: str, model: str | None = None):
-    """One streaming assistant turn. Yields deltas, returns (text, calls)."""
+    """One streaming assistant turn. Yields deltas, returns (text, calls).
+
+    Tool markup leaked into prose is held back from the chat stream, repaired
+    by toolcalls.extract(), and returned as a call so its result reaches model
+    context (and the loop can continue).
+    """
     content = ""
+    streamed = ""
     calls: dict[int, dict] = {}
     for chunk in stream_chat(messages, tool_definitions(), model=model):
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta
         if delta.content:
-            content += delta.content
-            yield ("delta", {"text": delta.content})
+            piece = delta.content
+            content += piece
+            if "<tool_call>" not in piece and '"name"' not in piece and "```json" not in piece:
+                streamed += piece
+                yield ("delta", {"text": piece})
         for tc in delta.tool_calls or []:
             slot = calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
             if tc.id:
@@ -132,7 +143,11 @@ def _tool_round(messages: list[dict], session_id: str, user_text: str, model: st
                     slot["name"] += tc.function.name
                 if tc.function.arguments:
                     slot["arguments"] += tc.function.arguments
-    return content, list(calls.values())
+
+    repaired, clean = toolcalls.extract(content)
+    if repaired and clean != streamed:
+        yield ("replace", {"text": clean})
+    return clean, list(calls.values()) + repaired
 
 
 def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = None):
@@ -156,6 +171,12 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
         skill_id = skills.select_skill(clean)
     else:
         skill_id = skills.select_skill(clean)
+
+    fresh = freshness.required(clean) and freshness.web_available()
+    label = freshness.period(clean) if fresh else ""
+    if fresh:
+        skill_id = "web-research"
+    tracker = freshness.Tracker(fresh, label)
 
     role = orchestrator.select_role(clean)
     system = build_system(mode, clean, skill_id)
@@ -202,6 +223,52 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
         for _ in range(4):  # bounded multi-tool loop
             content, calls = yield from _tool_round(messages, session_id, user_text, model)
             if not calls:
+                if tracker.blocked() and tracker.can_auto_search():
+                    queries = freshness.suggest_queries(clean)
+                    index = tracker.auto_searches
+                    query = (queries[index] if index < len(queries)
+                             else (queries[0] if queries else f"{label} news"))
+                    tracker.auto_searches += 1
+                    cid = f"auto_search_{tracker.auto_searches}"
+                    auto, info = freshness.auto_tool_messages(
+                        "web_search", {"query": query}, cid
+                    )
+                    messages.extend(auto)
+                    tracker.note_call("web_search")
+                    tracker.note_result("web_search", info["ok"], info["text"])
+                    messages.append({"role": "user", "content": freshness.grounding_note()})
+                    yield ("tool", {"name": "web_search", "result": info["text"],
+                                    "ok": info["ok"], "status": "ok" if info["ok"] else "error",
+                                    "args": json.dumps({"query": query})})
+                    continue
+                if tracker.blocked():
+                    correction = tracker.correct()
+                    if correction:
+                        messages.append({"role": "user", "content": correction})
+                        continue
+                    answer = freshness.failure(label)
+                    answer_parts = [answer]
+                    yield ("replace", {"text": answer})
+                    break
+                if tracker.can_auto_fetch() and tracker.last_search:
+                    url = freshness.first_url(tracker.last_search)
+                    if url:
+                        tracker.auto_fetches += 1
+                        cid = f"auto_fetch_{tracker.auto_fetches}"
+                        auto, info = freshness.auto_tool_messages(
+                            "web_fetch", {"url": url}, cid
+                        )
+                        messages.extend(auto)
+                        tracker.note_call("web_fetch")
+                        messages.append({"role": "user", "content": freshness.grounding_note()})
+                        yield ("tool", {"name": "web_fetch", "result": info["text"],
+                                        "ok": info["ok"], "status": "ok" if info["ok"] else "error",
+                                        "args": json.dumps({"url": url})})
+                        continue
+                nudge = tracker.fetch_nudge()
+                if nudge:
+                    messages.append({"role": "user", "content": nudge})
+                    continue
                 answer_parts.append(content)
                 break
 
@@ -240,6 +307,8 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                                     "ok": False, "status": "denied"})
                 else:
                     result = registry.run(call["name"], args, approved=True)
+                    tracker.note_call(call["name"])
+                    tracker.note_result(call["name"], result["ok"], registry.content(result))
                     if call["name"] == "web_fetch":
                         fetched_for_skill = True
                     if call["name"] == "git_status" and "diff" not in git_prompts:
@@ -270,13 +339,10 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                         "id": active_goal["id"], "text": active_goal["text"],
                         "status": "running", "step": call["name"],
                     })
-                if (skill_id == "web-research" and call["name"] == "web_search"
-                        and not fetched_for_skill and result["ok"]):
-                    messages.append({
-                        "role": "user",
-                        "content": "Follow the active skill: call web_fetch on the first result URL now, before answering.",
-                    })
-                if skill_id == "github-engineer" and result["ok"]:
+                nudge = tracker.fetch_nudge()
+                if nudge:
+                    messages.append({"role": "user", "content": nudge})
+                if skill_id == "github-engineer" and not tool_text.startswith("TOOL ERROR"):
                     if call["name"] == "git_status" and "diff" not in git_prompts:
                         git_prompts.add("diff")
                         messages.append({"role": "user", "content":
@@ -286,13 +352,20 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                         messages.append({"role": "user", "content":
                             "Follow the active skill: call git_status and git_diff now before answering."})
         else:
-            from llm import chat as plain
-            msg = plain(messages, None, model=model)
-            if msg.content:
-                answer_parts.append(msg.content)
-                yield ("delta", {"text": msg.content})
+            if tracker.blocked():
+                answer = freshness.failure(label)
+                answer_parts = [answer]
+                yield ("replace", {"text": answer})
+            else:
+                from llm import chat as plain
+                msg = plain(messages, None, model=model)
+                if msg.content:
+                    answer_parts.append(msg.content)
+                    yield ("delta", {"text": msg.content})
 
         answer = "".join(answer_parts).strip() or "(no answer)"
+        if fresh or tracker.searches or tracker.fetches:
+            yield ("research", {**tracker.summary(), "period": label})
         active_goal = goals.current()
         if active_goal:
             if "GOAL COMPLETE" in answer.upper():

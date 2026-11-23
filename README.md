@@ -84,6 +84,13 @@ uv run python main.py         # interactive chat in the terminal
 Prefer a browser? `uv run python server.py` serves `http://localhost:7777`
 (or `atlas web`, which opens it and stops the server when the tab closes).
 
+**Current questions actually search the web.** Ask about "latest releases",
+"current prices", "this week's breaches" or "November 2026" and Atlas loads
+`web-research`, runs `web_search` (and `web_fetch` where useful), and grounds
+the answer in those results. If the web is unreachable it says so instead of
+inventing a "latest" list. Ordinary questions (e.g. "what is a list
+comprehension?") never trigger a search. See [docs/agent.md](docs/agent.md).
+
 Optional: put the `atlas` launcher on your PATH for the short commands used
 below and in the docs:
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 
+import freshness
 import memory
 from llm import chat
 
@@ -35,6 +36,8 @@ Hard rules:
 - Never describe the conversation ("asked", "wants to know", "expressed
   interest"). Those are not facts.
 - If the message is only a question, return {"facts": []}
+- Never save web research topics, news requests or current-event lookups;
+  those are temporary tasks, not facts about the user.
 - Start each fact with "The user".
 - 0 to 3 facts. Fewer is better than invented.
 
@@ -77,6 +80,10 @@ def plausible(fact: str, message: str) -> bool:
 
 def extract(message: str, limit: int = 3) -> list[str]:
     """Durable facts from one user message. Never raises."""
+    # A research topic / date is temporary task context, never a memory —
+    # deterministic so a small model cannot leak it into the vault.
+    if freshness.required(message):
+        return []
     message = statements(message)
     if len(message) < 12:
         return []

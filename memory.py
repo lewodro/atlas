@@ -416,7 +416,9 @@ def recall(query: str, k: int = 5, budget: int = 2600) -> str:
         semantic = _semantic_hits(query)
     hits = rank_hits(keyword, semantic)
     if not hits:
-        hits = [(0.0, p) for p in _recent(3)]
+        # rank_hits() returns (Path, score); keep that order or recall() will
+        # try to read() a float and crash on every no-match question.
+        hits = [(p, 0.0) for p in _recent(3)]
 
     chunks, used = [], 0
     for path, _ in hits[:k]:

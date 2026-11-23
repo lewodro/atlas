@@ -108,6 +108,22 @@ For very small models the server adds one bounded follow-up after a skill's
 first tool call so the workflow completes (e.g. research fetches the source it
 found; Git inspection calls status and diff).
 
+## Freshness policy
+
+The `web-research` skill explains how to research; `freshness.py` enforces it
+in **both** harnesses (`main.turn()` and `server.stream_turn()`). Requests with
+time-sensitive intent (latest, recent, today, this week, current, November 2026,
+…) load the research skill and cannot finish until a successful `web_search`
+has entered model context. If the model narrates a search instead of calling
+the tool, the harness runs one bounded search (and one fetch) on its behalf;
+leaked `<tool_call>` markup is repaired by `toolcalls.py`. Retries are capped,
+and if the web cannot be reached the answer is "I couldn't verify current
+… information from the web" — never pretrained knowledge. Research topics are
+excluded from durable memory by a deterministic librarian guard.
+
+`uv run python eval/run_web_eval.py` checks the classifier offline; add
+`--live` to exercise the configured local model and real web tools.
+
 ## Fine-tuning for small models
 
 No weights are changed. The prompt is tuned instead:

@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 import config
+import freshness
 
 SKILLS_DIR = config.ROOT / "skills"
 CONFIG_FILE = config.ROOT_DATA / "skills.json"
@@ -101,6 +102,12 @@ def load_skill(skill_id: str) -> dict | None:
 
 def select_skill(text: str) -> str | None:
     """Keyword match against advertised metadata. No model call, no body read."""
+    # Time-sensitive requests must load the research workflow, even when the
+    # words happen to overlap another skill (e.g. "latest study results").
+    if freshness.required(text) and any(
+        s["id"] == "web-research" and s["enabled"] for s in list_skills()
+    ):
+        return "web-research"
     lowered = text.lower()
     if any(word in lowered for word in (
         "study", "notes", "note taking", "summarize", "summary", "explain",

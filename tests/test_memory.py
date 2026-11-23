@@ -39,6 +39,13 @@ class MemoryFilesTest(unittest.TestCase):
         self.assertIn("updated:", text)
         self.assertTrue(text.endswith("The user is learning Rust.\n"))
 
+    def test_no_match_fallback_keeps_path_score_order(self) -> None:
+        memory.remember("A note about nothing in particular.")
+        with patch.object(memory, "_keyword_hits", return_value=[]), \
+             patch.object(memory, "_semantic_hits", return_value=[]):
+            text = memory.recall("a completely unrelated query")
+        self.assertIn("A note about nothing", text)
+
     def test_keyword_recall_does_not_call_embeddings(self) -> None:
         memory.remember("The user is learning Rust.", ["learning"])
         with patch.dict(os.environ, {"ATLAS_RETRIEVAL": "hybrid"}), patch.object(

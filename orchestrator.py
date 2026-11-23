@@ -16,6 +16,7 @@ import uuid
 from pathlib import Path
 
 import config
+import freshness
 
 INSTANCES_FILE = config.ROOT_DATA / "instances.json"
 
@@ -50,6 +51,8 @@ DEFAULT = "general"
 def select_role(text: str) -> str:
     """Pick one role from the request. Cheap keyword pass, no model call."""
     low = str(text or "").lower()
+    if freshness.required(text):
+        return "research"
     if any(w in low for w in (
         "study", "notes", "summar", "explain", "graph", "function",
         "formula", "learn", "exam", "revision", "draw",

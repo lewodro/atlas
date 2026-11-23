@@ -11,6 +11,7 @@ for -> save what matters. Read `turn()` first; everything else is plumbing.
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 import subprocess
@@ -22,6 +23,7 @@ from pathlib import Path
 import activity
 import artifacts
 import context
+import freshness
 import fstools
 import librarian
 import netguard
@@ -31,6 +33,7 @@ import modes
 import orchestrator
 import registry
 import skills
+import toolcalls
 import webtools
 import workspace
 from config import FRONTIER_READY, MODEL, WHERE
@@ -76,6 +79,7 @@ def build_system(mode: str, user_text: str, skill_id: str | None = None) -> str:
     # Project skills must reason from tool results, not from a global scan of ~/dev.
     activity = "" if any(s in skill_ids for s in ("project-explorer", "github-engineer")) else activity_block()
     prompt = modes.build(mode, notes, activity)
+    prompt += f"\n\nCURRENT DATE: {datetime.date.today().isoformat()} (system clock)."
     prompt += f"\n\nAGENT ROLE: {plan['role']}"
     local_card = context.card(user_text, skill_id)
     if local_card:
@@ -84,6 +88,8 @@ def build_system(mode: str, user_text: str, skill_id: str | None = None) -> str:
         skill = skills.load_skill(sid)
         if skill and skill.get("enabled"):
             prompt += "\n\nSKILL: " + skill["name"] + "\n" + skill["body"][:1100]
+    if freshness.required(user_text) and freshness.web_available():
+        prompt += "\n\n" + freshness.directive(user_text)
     return prompt
 
 
@@ -104,38 +110,16 @@ def run_tool(name: str, args: dict, user_text: str = "", *, approved: bool = Fal
 
 
 def salvage(text: str, user_text: str = "") -> str:
-    """Small models leak raw <tool_call> tags into prose. Run them, hide them."""
-    if "<tool_call>" not in text:
-        return text.strip()
+    """Legacy safety net: run calls leaked into prose, hide the raw markup.
 
-    def handle(match: re.Match) -> str:
-        try:
-            data = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            return ""
-        name, args = data.get("name") or "", data.get("arguments") or {}
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except json.JSONDecodeError:
-                return ""
-        if name:
-            print(f"  · {name} -> {run_tool(name, args, user_text)}")
-        return ""
-
-    text = TOOL_TAG.sub(handle, text)
-
-    if "<tool_call>" in text:  # unterminated
-        head, _, tail = text.partition("<tool_call>")
-        try:
-            clean = tail.strip().removeprefix("```json").removesuffix("```").strip()
-            data = json.loads(clean)
-            if data.get("name"):
-                print(f"  · {data['name']} -> {run_tool(data['name'], data.get('arguments') or {}, user_text)}")
-        except Exception:
-            pass
-        text = head
-    return text.strip()
+    The main loop now repairs calls *before* the final answer (see turn()), so
+    their results reach the model. This still covers callers that use finish()
+    directly.
+    """
+    calls, clean = toolcalls.extract(text)
+    for call in calls:
+        print(f"  · {call['name']} -> {run_tool(call['name'], call['arguments'], user_text)}")
+    return clean
 
 
 def finish(answer: str, user_text: str, mode: str) -> str:
@@ -154,50 +138,116 @@ def turn(
     *,
     write_memory: bool = True,
 ) -> str:
+    """One turn. Time-sensitive requests cannot finish without a web search."""
     memory.log_turn("user", user_text, mode, memory.cli_session())
-    skill_id = skills.select_skill(user_text)
+    fresh = freshness.required(user_text) and freshness.web_available()
+    label = freshness.period(user_text) if fresh else ""
+    skill_id = "web-research" if fresh else skills.select_skill(user_text)
     messages[0] = {"role": "system", "content": build_system(mode, user_text, skill_id)}
     messages.append({"role": "user", "content": user_text})
+    tracker = freshness.Tracker(fresh, label)
 
-    for _ in range(4):  # bounded multi-tool loop, then force prose
+    def complete(answer: str, *, remember: bool = True) -> str:
+        result = finish(answer, user_text, mode)
+        if write_memory and remember:
+            journal(user_text)
+        return result
+
+    for _ in range(4):  # bounded multi-tool loop
         msg = chat(messages, tool_definitions(), tier=tier)
-        assistant: dict = {"role": "assistant", "content": msg.content or ""}
-        if msg.tool_calls:
+        content = msg.content or ""
+        calls: list[dict] = []
+        for item in (msg.tool_calls or []):
+            try:
+                args = json.loads(item.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            calls.append({"id": item.id, "name": item.function.name, "arguments": args})
+
+        # Repair calls leaked into prose and feed results back into the loop.
+        repaired, clean = toolcalls.extract(content)
+        for i, call in enumerate(repaired):
+            call["id"] = call.get("id") or f"repair_{i}"
+            calls.append(call)
+
+        assistant: dict = {"role": "assistant", "content": clean if repaired else content}
+        if calls:
             assistant["tool_calls"] = [
-                {"id": c.id, "type": "function",
-                 "function": {"name": c.function.name, "arguments": c.function.arguments or "{}"}}
-                for c in msg.tool_calls
+                {"id": c["id"], "type": "function",
+                 "function": {"name": c["name"],
+                              "arguments": json.dumps(c["arguments"])}}
+                for c in calls
             ]
         messages.append(assistant)
 
-        if not msg.tool_calls:
-            answer = finish(msg.content or "(empty reply)", user_text, mode)
-            if write_memory:
-                journal(user_text)
-            return answer
+        if not calls:
+            # The model narrated instead of calling. The harness performs one
+            # bounded search itself so a small model cannot skip research.
+            if tracker.blocked() and tracker.can_auto_search():
+                queries = freshness.suggest_queries(user_text)
+                index = tracker.auto_searches
+                query = (queries[index] if index < len(queries)
+                         else (queries[0] if queries else f"{label} news"))
+                tracker.auto_searches += 1
+                cid = f"auto_search_{tracker.auto_searches}"
+                auto, info = freshness.auto_tool_messages(
+                    "web_search", {"query": query}, cid
+                )
+                messages.extend(auto)
+                tracker.note_call("web_search")
+                tracker.note_result("web_search", info["ok"], info["text"])
+                messages.append({"role": "user", "content": freshness.grounding_note()})
+                print(f"  · web_search (harness) -> {info['text'][:100]}")
+                continue
+            if tracker.blocked():
+                correction = tracker.correct()
+                if correction:
+                    messages.append({"role": "user", "content": correction})
+                    continue
+                # Retries exhausted: never substitute stale model knowledge.
+                return complete(freshness.failure(label), remember=False)
+            if tracker.can_auto_fetch() and tracker.last_search:
+                url = freshness.first_url(tracker.last_search)
+                if url:
+                    tracker.auto_fetches += 1
+                    cid = f"auto_fetch_{tracker.auto_fetches}"
+                    auto, info = freshness.auto_tool_messages(
+                        "web_fetch", {"url": url}, cid
+                    )
+                    messages.extend(auto)
+                    tracker.note_call("web_fetch")
+                    messages.append({"role": "user", "content": freshness.grounding_note()})
+                    print(f"  · web_fetch (harness) -> {info['text'][:100]}")
+                    continue
+            nudge = tracker.fetch_nudge()
+            if nudge:
+                messages.append({"role": "user", "content": nudge})
+                continue
+            return complete(content or "(empty reply)")
 
-        for call in msg.tool_calls:
-            try:
-                args = json.loads(call.function.arguments or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            approved = registry.permission(call.function.name, args) != "ASK"
+        for call in calls:
+            name, args = call["name"], call["arguments"]
+            approved = registry.permission(name, args) != "ASK"
             if not approved:
-                answer = input(f"Allow tool {call.function.name}? [y/N] ").strip().lower()
+                answer = input(f"Allow tool {name}? [y/N] ").strip().lower()
                 approved = answer in ("y", "yes")
-            result = registry.run(call.function.name, args, approved=approved)
-            if result.get("error") == registry.NEEDS_APPROVAL:
-                content = "Permission denied by user."
-            else:
-                content = registry.content(result)
-            print(f"  · {call.function.name} -> {content[:100]}")
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": content})
+            result = registry.run(name, args, approved=approved)
+            tool_text = ("Permission denied by user." if result.get("error") == registry.NEEDS_APPROVAL
+                         else registry.content(result))
+            tracker.note_call(name)
+            tracker.note_result(name, result["ok"], tool_text)
+            print(f"  · {name} -> {tool_text[:100]}")
+            messages.append({"role": "tool", "tool_call_id": call["id"], "content": tool_text})
 
+        nudge = tracker.fetch_nudge()
+        if nudge:
+            messages.append({"role": "user", "content": nudge})
+
+    if tracker.blocked():
+        return complete(freshness.failure(label), remember=False)
     messages.append({"role": "user", "content": "Answer directly in a few sentences. No tools."})
     msg = chat(messages, None, tier=tier)
-    if write_memory:
-        journal(user_text)
-    return finish(msg.content or "(no answer)", user_text, mode)
+    return complete(msg.content or "(no answer)")
 
 
 def journal(user_text: str, announce: bool = True) -> None:

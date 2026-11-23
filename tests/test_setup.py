@@ -7,7 +7,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -43,6 +44,32 @@ class ProviderRegistry(unittest.TestCase):
             models.RUNTIMES,
             [(p["name"], p["base_url"]) for p in config.PROVIDERS.values()],
         )
+
+
+class BoundedGeneration(unittest.TestCase):
+    def test_empty_length_response_retries_once_with_larger_cap(self):
+        first = SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content="", tool_calls=None),
+                finish_reason="length",
+            )]
+        )
+        second = SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content="ready", tool_calls=None),
+                finish_reason="stop",
+            )]
+        )
+        client = MagicMock()
+        client.chat.completions.create.side_effect = [first, second]
+        with patch.object(llm, "active", return_value=(client, "model-x")):
+            reply = llm.chat([{"role": "user", "content": "hi"}], temperature=0.2)
+        self.assertEqual(reply.content, "ready")
+        calls = client.chat.completions.create.call_args_list
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0].kwargs["max_tokens"], config.MAX_TOKENS)
+        self.assertEqual(calls[1].kwargs["max_tokens"], min(config.MAX_TOKENS * 2, 2048))
+        self.assertEqual(calls[1].kwargs["temperature"], 0.2)
 
 
 class Credentials(unittest.TestCase):
