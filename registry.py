@@ -24,9 +24,11 @@ import config
 import fstools
 import githubtools
 import gittools
+import handoff
 import imagetools
 import mathtools
 import providers
+import reporttools
 import research
 import skills
 import termtools
@@ -256,6 +258,26 @@ def _image_edit(args: dict) -> dict:
     return imagetools.edit(args)
 
 
+def _project_test(args: dict) -> str:
+    return reporttools.project_test(args.get("path", ""))
+
+
+def _test_report(args: dict) -> dict:
+    return reporttools.test_report(
+        args.get("results", ""), args.get("issues", ""),
+        args.get("path", "TEST_REPORT.md"),
+    )
+
+
+def _handoff_write(args: dict) -> dict:
+    return handoff.write(args.get("to", ""), args.get("message", ""),
+                         args.get("files", []))
+
+
+def _handoff_read(args: dict) -> str:
+    return handoff.read()
+
+
 def _code_execute(args: dict) -> str:
     return codetools.execute(args.get("code", ""))
 
@@ -413,6 +435,39 @@ def register_builtins() -> None:
             "required": ["path"]},
         handler=_image_edit, category="image", provider="atlas",
         permission="ASK",
+    ))
+    register(ToolSpec(
+        id="project_test",
+        description="Run a bounded syntax/runtime check on one workspace file and return the result.",
+        parameters={"type": "object", "properties": {"path": {"type": "string"}},
+                    "required": ["path"]},
+        handler=_project_test, category="execution", provider="atlas",
+    ))
+    register(ToolSpec(
+        id="test_report",
+        description="Write a TEST_REPORT.md with results and reproduced issues. Writes need approval.",
+        parameters={"type": "object", "properties": {
+            "results": {"type": "string"}, "issues": {"type": "string"},
+            "path": {"type": "string"}}, "required": ["results"]},
+        handler=_test_report, category="collaboration", provider="atlas",
+        permission="ASK",
+    ))
+    register(ToolSpec(
+        id="handoff",
+        description="Write a note for another agent in the shared workspace (HANDOFF.md). Include files you created.",
+        parameters={"type": "object", "properties": {
+            "to": {"type": "string", "description": "Agent role or name, e.g. tester"},
+            "message": {"type": "string"},
+            "files": {"type": "array", "items": {"type": "string"}}},
+            "required": ["to", "message"]},
+        handler=_handoff_write, category="collaboration", provider="atlas",
+        permission="ASK",
+    ))
+    register(ToolSpec(
+        id="handoff_read",
+        description="Read the shared HANDOFF.md notes from another agent.",
+        parameters={"type": "object", "properties": {}},
+        handler=_handoff_read, category="collaboration", provider="atlas",
     ))
     register(ToolSpec(
         id="code_execute",

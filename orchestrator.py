@@ -38,6 +38,14 @@ ROLES: dict[str, dict] = {
         "blurb": "inspect workspace, Git and code",
         "skills": ["project-explorer", "github-engineer"],
     },
+    "coder": {
+        "blurb": "build a project by writing real files",
+        "skills": ["code-builder", "github-engineer"],
+    },
+    "tester": {
+        "blurb": "test code and report reproduced failures",
+        "skills": ["code-tester"],
+    },
     "memory": {
         "blurb": "recall and update personal context",
         "skills": ["personal-memory"],
@@ -59,9 +67,13 @@ def select_role(text: str) -> str:
         "search", "research", "look up", "fetch", "current", "source", "cite",
     )):
         return "research"
+    if any(w in low for w in ("test", "verify", "qa", "bug", "reproduce")):
+        return "tester"
+    if any(w in low for w in ("build", "implement", "write code", "create a project")):
+        return "coder"
     if any(w in low for w in (
         "repo", "git", "commit", "branch", "code", "project", "workspace",
-        "file", "diff", "build", "terminal",
+        "file", "diff", "terminal",
     )):
         return "engineer"
     if any(w in low for w in (

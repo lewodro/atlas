@@ -383,6 +383,8 @@ const TOOL_LABELS_EXTRA = {
   image_generate: "Generated an image",
   image_edit: "Edited an image",
   code_execute: "Ran Python code",
+  project_test: "Tested a project file",
+  test_report: "Wrote a test report",
 };
 function memoryLine(payload) {
   const el = document.createElement("details");
@@ -934,7 +936,10 @@ function renderWorkers() {
         <div class="select-menu" role="listbox" hidden></div>
       </div>
       <textarea id="orch-goal" rows="3" placeholder="e.g. definitive research on Claude Fable 5.2 and latest model updates" spellcheck="false"></textarea>
-      <div class="card-foot"><button class="text-btn" id="orch-run">Run goal</button></div>
+      <div class="card-foot">
+        <button class="text-btn" id="orch-seq" title="Toggle parallel or sequential">Parallel</button>
+        <button class="text-btn" id="orch-run">Run goal</button>
+      </div>
       <pre id="orch-result" class="skill-body" hidden></pre>
     </div>`;
 
@@ -953,6 +958,12 @@ function renderWorkers() {
     ...paths.map((path) => ({ value: path, label: path.split("/").pop(), meta: "project" })),
   ]);
 
+  let orchestrateSequential = false;
+  $("#orch-seq").onclick = () => {
+    orchestrateSequential = !orchestrateSequential;
+    $("#orch-seq").textContent = orchestrateSequential ? "Sequential" : "Parallel";
+  };
+
   $("#orch-run").onclick = async () => {
     const goal = $("#orch-goal").value.trim();
     if (!goal) return;
@@ -965,6 +976,7 @@ function renderWorkers() {
         body: JSON.stringify({
           goal,
           workspace: selects.orchWorkspace?.value || "",
+          sequential: orchestrateSequential,
         }),
       });
       const reader = res.body.getReader(), decoder = new TextDecoder();
