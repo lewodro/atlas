@@ -47,6 +47,7 @@ import orchestrator
 import profiles
 import registry
 import research
+import researchloop
 import skills
 import toolcalls
 import workspace
@@ -209,6 +210,23 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
         memory.log_turn("assistant", answer, mode, session_id)
         yield ("done", {"session": session_id, "text": answer})
         return
+
+    if researchloop.needs_research(clean):
+        result: dict = {}
+        for kind, payload in researchloop.run_stream(clean, model=model):
+            if kind == "event":
+                yield ("research", payload)
+            else:
+                result = payload
+        if result:
+            answer = result.get("answer") or "(no answer)"
+            yield ("delta", {"text": answer})
+            memory.log_turn("assistant", answer, mode, session_id)
+            memory.update_session(session_id)
+            yield ("done", {"session": session_id, "text": answer,
+                            "research": result})
+            threading.Thread(target=_journal, args=(user_text,), daemon=True).start()
+            return
 
     used = profiles.search(profiles.active(), user_text, k=4)
     if used:

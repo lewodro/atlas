@@ -543,12 +543,22 @@ function skillLine(name) {
 function researchLine(payload) {
   const el = document.createElement("div");
   el.className = "tool tool-note";
-  const parts = [];
-  if (payload.searches) parts.push(`Searched web ${payload.searches}×`);
-  if (payload.fetches) parts.push(`Fetched ${payload.fetches} source${payload.fetches === 1 ? "" : "s"}`);
-  if (payload.actions) parts.push(`Ran ${payload.actions} agent action${payload.actions === 1 ? "" : "s"}`);
-  if (!parts.length) parts.push("Web research could not be verified");
-  el.innerHTML = `${icon("spark")} ${parts.join(" · ")}`;
+  let text = "";
+  if (payload.stage === "search") {
+    text = `Searching: ${payload.query || ""}${payload.count != null ? ` · ${payload.count} results` : ""}`;
+  } else if (payload.stage === "inspect") {
+    text = `Inspecting: ${payload.url || ""}${payload.passages != null ? ` · ${payload.passages} passages` : ""}`;
+  } else if (payload.stage === "evaluate") {
+    text = `Evidence: ${payload.evidence || 0} source${payload.evidence === 1 ? "" : "s"} · ${payload.complete ? "sufficient" : `missing ${payload.missing || "detail"}`}`;
+  } else if (payload.stage === "reformulate") {
+    text = `Reformulating search${payload.missing ? `: ${payload.missing}` : ""}`;
+  } else if (payload.stage === "stop") {
+    text = `Research stopped: ${payload.reason || "budget reached"}`;
+  } else if (payload.searches) {
+    text = `Searched web ${payload.searches}×`;
+    if (payload.fetches) text += ` · fetched ${payload.fetches} source${payload.fetches === 1 ? "" : "s"}`;
+  }
+  el.innerHTML = `${icon("spark")} ${esc(text || "Researching…")}`;
   $("#messages").appendChild(el);
   scrollDown();
 }

@@ -9,13 +9,65 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, quote, urlparse
 
+import config
 import netguard
 
 MAX_RESULTS = 8
 MAX_CHARS = 6000
+
+# DuckDuckGo rejects generic bot user agents with HTTP 202. A browser-shaped
+# request is required for the no-key HTML endpoint. Requests are also spaced
+# out and cached: the research loop can legitimately issue several searches,
+# and hammering the endpoint gets the whole machine throttled.
+BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+)
+SEARCH_HEADERS = {
+    "User-Agent": BROWSER_UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://lite.duckduckgo.com/",
+    "Cache-Control": "no-cache",
+}
+SEARCH_INTERVAL = 2.5
+SEARCH_RETRIES = 3
+_SEARCH_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_LAST_SEARCH = 0.0
+CACHE_TTL = 6 * 3600
+CACHE_FILE = config.ROOT_DATA / "search-cache.json"
+
+
+def _load_disk_cache() -> None:
+    """Reuse good results across processes when a provider throttles us."""
+    try:
+        payload = json.loads(CACHE_FILE.read_text())
+    except (OSError, json.JSONDecodeError, ValueError):
+        return
+    if not isinstance(payload, dict):
+        return
+    for query, entry in payload.items():
+        if isinstance(entry, dict) and isinstance(entry.get("rows"), list):
+            _SEARCH_CACHE[str(query)] = (float(entry.get("ts", 0)), entry["rows"])
+
+
+_load_disk_cache()
+
+
+def _save_disk_cache() -> None:
+    try:
+        CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            key: {"ts": stamp, "rows": rows}
+            for key, (stamp, rows) in list(_SEARCH_CACHE.items())[:200]
+        }
+        CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False)[:2_000_000])
+    except OSError:
+        pass
 
 
 def _unwrap(url: str) -> str:
@@ -103,34 +155,83 @@ def _safe_results(rows: list[dict], limit: int) -> list[dict]:
     return kept[:limit]
 
 
+def _cache_key(query: str) -> str:
+    return " ".join(query.lower().split())
+
+
+def _cached(query: str, limit: int) -> list[dict] | None:
+    hit = _SEARCH_CACHE.get(_cache_key(query))
+    if not hit:
+        return None
+    stamp, rows = hit
+    if time.time() - stamp > CACHE_TTL:
+        return None
+    return rows[:limit]
+
+
+def _remember(query: str, rows: list[dict]) -> None:
+    _SEARCH_CACHE[_cache_key(query)] = (time.time(), rows)
+    if len(_SEARCH_CACHE) > 200:
+        oldest = min(_SEARCH_CACHE, key=lambda key: _SEARCH_CACHE[key][0])
+        _SEARCH_CACHE.pop(oldest, None)
+    _save_disk_cache()
+
+
+def _duckduckgo(query: str, limit: int) -> list[dict]:
+    """Lite HTML search with spacing, browser headers and bounded retries."""
+    global _LAST_SEARCH
+    error: netguard.NetError | None = None
+    for attempt in range(SEARCH_RETRIES):
+        wait = SEARCH_INTERVAL - (time.time() - _LAST_SEARCH)
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            url = "https://lite.duckduckgo.com/lite/?q=" + quote(query)
+            response = netguard.fetch(url, headers=SEARCH_HEADERS)
+            parser = _ResultParser()
+            parser.feed(response.text)
+            _LAST_SEARCH = time.time()
+            if parser.results:
+                return parser.results
+            error = netguard.NetError("search returned no parseable results")
+        except netguard.NetError as exc:
+            error = exc
+            _LAST_SEARCH = time.time()
+        # 202 / empty page usually means temporary throttling, not a bad query.
+        if attempt + 1 < SEARCH_RETRIES:
+            time.sleep(4.0 * (attempt + 1))
+    raise error or netguard.NetError("search failed")
+
+
+def _brave(query: str, limit: int, key: str) -> list[dict]:
+    url = "https://api.search.brave.com/res/v1/web/search?q=" + quote(query) + f"&count={limit}"
+    response = netguard.fetch(url, headers={"X-Subscription-Token": key})
+    try:
+        payload = json.loads(response.text)
+    except json.JSONDecodeError as exc:
+        raise netguard.NetError("search provider returned invalid JSON") from exc
+    return [
+        {"title": r.get("title", ""), "url": r.get("url", ""),
+         "snippet": r.get("description", ""),
+         "published": r.get("page_age") or r.get("age") or ""}
+        for r in payload.get("web", {}).get("results", [])
+    ]
+
+
 def search(query: str, limit: int = 5) -> list[dict]:
     query = " ".join(str(query or "").split())
     if not query:
         raise netguard.NetError("empty search query")
     limit = max(1, min(int(limit), MAX_RESULTS))
+    cached = _cached(query, limit)
+    if cached is not None:
+        return cached
 
     key = os.getenv("ATLAS_BRAVE_KEY", "").strip()
-    if key:
-        url = "https://api.search.brave.com/res/v1/web/search?q=" + quote(query) + f"&count={limit}"
-        response = netguard.fetch(url, headers={"X-Subscription-Token": key})
-        try:
-            payload = json.loads(response.text)
-        except json.JSONDecodeError as exc:
-            raise netguard.NetError("search provider returned invalid JSON") from exc
-        rows = [
-            {"title": r.get("title", ""), "url": r.get("url", ""),
-             "snippet": r.get("description", ""),
-             "published": r.get("page_age") or r.get("age") or ""}
-            for r in payload.get("web", {}).get("results", [])
-        ]
-    else:
-        url = "https://lite.duckduckgo.com/lite/?q=" + quote(query)
-        response = netguard.fetch(url)
-        parser = _ResultParser()
-        parser.feed(response.text)
-        rows = parser.results
-
-    return _safe_results(rows, limit)
+    rows = _brave(query, limit, key) if key else _duckduckgo(query, limit)
+    safe = _safe_results(rows, limit)
+    _remember(query, safe)
+    return safe
 
 
 def format_search(query: str, limit: int = 5) -> str:

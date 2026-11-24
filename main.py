@@ -352,7 +352,7 @@ def main() -> None:
             answer = ""
             print()
         if wants_web_gui(answer):
-            raise SystemExit(launch_web_gui())
+            sys.exit(launch_web_gui())
 
         hint = "  /frontier" if FRONTIER_READY else ""
         print("      · web later: atlas web")
