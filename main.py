@@ -230,6 +230,18 @@ def turn(
             # JSON plan per turn, executed by the harness inside the workspace.
             if not planned and steps == 0 and not tracker.blocked():
                 planned = True
+                # Goal-driven multi-tool path: plan, act, observe, replan.
+                if agent.needs_actions(user_text):
+                    import goalrunner
+                    outcome = goalrunner.run(
+                        user_text, tier=tier,
+                        on_event=lambda item: print(
+                            f"  · {item.get('step', '')}", flush=True
+                        ),
+                    )
+                    if outcome["steps"]:
+                        steps += outcome["step_count"]
+                        return complete(outcome["answer"])
                 action_plan = agent.plan(user_text, tier=tier)
                 if action_plan["actions"]:
                     steps += len(action_plan["actions"])

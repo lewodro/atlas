@@ -40,6 +40,12 @@ atlas> You prefer short answers. You're learning Python on an M4.
 - **Company files**: company research pulls web sources, clean Wikipedia text
   and real SEC filings (10-K/10-Q/8-K) with their archive URLs, then answers
   from that digest. See `skills/company-research/SKILL.md`.
+- **Goal-driven tool use**: the harness plans, validates, executes, observes
+  and replans multiple tool calls toward a goal — even when the local model
+  cannot emit native tool calls. See `goalrunner.py`.
+- **Local online learning**: a tiny Bayesian tool-success policy and kNN
+  retrieval of past successful plans adapt tool choice to the task. No cloud
+  training data, no telemetry; everything lives in `data/atlas.db`.
 - **Portable by design**: no machine-specific paths, no cloud account, no API
   key for local models. Works on macOS, Linux and Windows.
 
@@ -245,6 +251,8 @@ atlas skills list | show web-research
 atlas artifacts list
 atlas workspace                      # root, repo, branch, clean/dirty
 atlas goal set "summarize the last commit"
+atlas policy                              # learned tool success rates
+atlas policy "create a python file and test it"   # task-specific history
 atlas agents roles
 atlas bench
 ```

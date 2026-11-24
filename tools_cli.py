@@ -114,6 +114,9 @@ def main() -> int:
     goal_sub.add_parser("status")
     goal_sub.add_parser("clear")
 
+    policy = sub.add_parser("policy", help="learned tool success rates and past plans")
+    policy.add_argument("text", nargs="*")
+
     sub.add_parser("workspace", help="show workspace and Git context")
 
     company = sub.add_parser("company", help="real, dated company research")
@@ -235,6 +238,24 @@ def main() -> int:
                 else:
                     state = "available" if row["available"] else "not configured"
                     print(f"{row['id']:16} {state:14} {row['permission']:6} {row['provider']:8} {row['description'][:60]}")
+            return 0
+
+        if args.group == "policy":
+            import examples
+            import toolpolicy
+            text = " ".join(args.text).strip()
+            if not text:
+                print("Overall learned tool success (Beta posterior mean):")
+                for row in toolpolicy.top():
+                    print(f"  {row['tool']:16} {row['success']}/{row['n']} "
+                          f"score={row['mean']:.2f}")
+                return 0
+            sig = toolpolicy.signature(text)
+            print("signature:", sig)
+            print(toolpolicy.prompt_hint(sig) or "no history for this task type yet")
+            for row in examples.similar(text):
+                tools = ", ".join(str(step.get("tool")) for step in row["steps"])
+                print(f"  similar ({row['similarity']}): {row['goal']} -> {tools}")
             return 0
 
         if args.group == "company":

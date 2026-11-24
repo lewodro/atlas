@@ -119,6 +119,34 @@ atlas tools configure --workspace PATH
 The GUI Tools page shows the same status and lets you set the workspace without
 leaving the browser.
 
+## Goal execution and learned tool use
+
+When a request needs several actions, `goalrunner.py` runs a bounded loop:
+short plan → registry validation → real tool calls → compact observations →
+goal check → bounded replan. Steps are deduplicated, read-only steps are safe
+to run in sequence, and writes stay inside the workspace. If a step fails, the
+model gets one bounded repair attempt; if nothing works, the run reports the
+observed failure instead of claiming success. Native tool calls from capable
+models still go through the original loop in `main.py` / `server.py`.
+
+Two lightweight learning mechanisms improve tool choice over time:
+
+- `toolpolicy.py` keeps a Beta posterior of success for each
+  *(task signature, tool)* pair, updated after every real tool observation.
+  `rank()` uses Thompson sampling (small epsilon) to favour tools that work on
+  similar goals while still exploring. `atlas policy` shows the learned scores.
+- `examples.py` stores plans that reached their goal and retrieves similar
+  ones with TF-IDF cosine similarity. One or two compact examples are added to
+  the planner prompt, which is a form of instance-based learning — no weights,
+  no GPU, no cloud service.
+
+Both stores live in the gitignored local `data/atlas.db` and are per profile.
+
+```bash
+atlas policy                                   # overall tool success
+atlas policy "write a parser, then test it"    # signature, history, examples
+```
+
 ## Tests
 
 ```bash

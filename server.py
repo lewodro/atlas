@@ -182,6 +182,7 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     tracker = freshness.Tracker(fresh, label)
     steps = 0
     planned = False
+    tool_outputs: list[tuple[str, str]] = []
 
     role = orchestrator.select_role(clean)
     system = build_system(mode, clean, skill_id)
@@ -301,6 +302,34 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                     continue
                 if not planned and steps == 0 and not tracker.blocked():
                     planned = True
+                    # Goal-driven path: validate and execute several tool calls,
+                    # observe each result, then check whether the goal is done.
+                    if agent.needs_actions(clean):
+                        import goalrunner
+                        goal_events: list[dict] = []
+                        outcome = goalrunner.run(
+                            clean, model=model,
+                            on_event=lambda item: goal_events.append(item),
+                        )
+                        for item in goal_events:
+                            yield ("goal", item)
+                        if outcome["steps"]:
+                            steps += outcome["step_count"]
+                            for step in outcome["steps"]:
+                                yield ("tool", {
+                                    "name": step["tool"],
+                                    "result": step["text"],
+                                    "ok": step["ok"],
+                                    "status": "ok" if step["ok"] else "error",
+                                    "args": json.dumps(step["args"])[:220],
+                                })
+                            text = outcome["answer"]
+                            answer_parts = [text]
+                            yield ("delta", {"text": text})
+                            yield ("research", {**tracker.summary(),
+                                                "actions": outcome["step_count"],
+                                                "period": label})
+                            break
                     action_plan = agent.plan(clean)
                     if action_plan["actions"]:
                         steps += len(action_plan["actions"])
@@ -384,6 +413,7 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                     if call["name"] == "git_status" and "diff" not in git_prompts:
                         git_prompts.add("diff")
                     tool_text = registry.content(result)
+                    tool_outputs.append((call["name"], tool_text))
                     yield ("tool", {
                         "name": call["name"], "result": tool_text,
                         "ok": result["ok"], "status": "ok" if result["ok"] else "error",
@@ -446,7 +476,28 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                 answer_parts.append(msg.content.strip())
                 yield ("delta", {"text": msg.content.strip()})
 
-        answer = "".join(answer_parts).strip() or "(no answer)"
+        answer = "".join(answer_parts).strip()
+        if not answer and tool_outputs:
+            # Tool calls succeeded but the small model never produced a final
+            # message. Report the observed results instead of "(no answer)".
+            try:
+                from llm import chat as plain
+                report = plain(
+                    [{"role": "system", "content": agent.REPORT_SYSTEM},
+                     {"role": "user", "content":
+                      "User request: " + clean + "\nObserved tool results:\n"
+                      + "\n".join(f"- {name}: {text[:400]}" for name, text in tool_outputs[-8:])}],
+                    None, model=model,
+                )
+                answer = (report.content or "").strip()
+            except Exception:
+                answer = ""
+            if not answer:
+                answer = "Completed: " + ", ".join(
+                    f"{name} ({'ok' if not text.startswith('TOOL ERROR') else 'failed'})"
+                    for name, text in tool_outputs[-8:]
+                )
+        answer = answer or "(no answer)"
         if company_researched and answer != "(no answer)" and "http" not in answer:
             from llm import chat as plain
             retry = plain(
