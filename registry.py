@@ -23,6 +23,7 @@ import config
 import fstools
 import gittools
 import mathtools
+import research
 import skills
 import termtools
 import webtools
@@ -231,6 +232,13 @@ def _web_fetch(args: dict) -> str:
     return webtools.fetch_page(args.get("url", ""))
 
 
+def _company_research(args: dict) -> str:
+    return research.company(
+        args.get("company", ""),
+        sources=args.get("sources"),
+    )["digest"]
+
+
 def _plot(args: dict) -> str:
     if args.get("eval_at") is not None:
         return mathtools.evaluate(args.get("expression", ""), float(args["eval_at"]))
@@ -318,6 +326,15 @@ def register_builtins() -> None:
         description="Fetch one public http(s) page and return readable text with its URL.",
         parameters={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
         handler=_web_fetch, category="web", provider="atlas",
+    ))
+    register(ToolSpec(
+        id="company_research",
+        description="Research a company with real sources: overview, financials, recent news and market. Source count adapts to the local model size.",
+        parameters={"type": "object", "properties": {
+            "company": {"type": "string"},
+            "sources": {"type": "integer", "description": "2-10; default adapts to model size"}},
+            "required": ["company"]},
+        handler=_company_research, category="web", provider="atlas",
     ))
     register(ToolSpec(
         id="plot_function",

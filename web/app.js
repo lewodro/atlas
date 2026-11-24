@@ -1212,6 +1212,8 @@ const SLASH_ACTIONS = [
   { id: "tools", label: "Tools", desc: "Open the tools workspace", icon: "tools" },
   { id: "memory", label: "Memory", desc: "Open saved memories", icon: "memory" },
   { id: "usage", label: "Usage", desc: "Open local usage", icon: "pulse" },
+  { id: "company", label: "Company", desc: "Research a company with real sources", icon: "globe",
+    insert: "Give me a detailed company research report on " },
 ];
 
 let slashItems = [];
@@ -1289,6 +1291,8 @@ function chooseSlash(index) {
   let navigate = null;
   if (item.prefix === "/skill:") {
     insert = `/skill:${item.id} `;
+  } else if (item.insert) {
+    insert = item.insert;
   } else if (item.id === "goal") {
     insert = "/goal ";
   } else {

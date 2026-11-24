@@ -96,6 +96,18 @@ Only these run: `ls`, `pwd`, `cat`, `tree`, `git status`, `git log`,
 env vars or arbitrary executables**. Every command runs with `shell=False`,
 a timeout and capped output, with `cwd` fixed to the configured workspace.
 
+## Company research
+
+`company_research` (CLI: `atlas company "Nvidia"`) runs four query groups —
+overview, financials, recent news and market — and fetches real pages. Source
+count and page length scale with the configured local model: 4 sources on a 3B,
+6 on a 7B, 8 on a 12B+, with an optional `sources` override (2-10). The digest
+carries source URLs and untrusted page text; the model is nudged to cite at
+least two URLs and a bounded retry restores URLs if it drops them.
+
+The `/company` slash action inserts a ready-made research prompt in the
+composer.
+
 ## Status and configuration
 
 ```bash

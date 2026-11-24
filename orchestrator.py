@@ -33,7 +33,7 @@ ROLES: dict[str, dict] = {
     },
     "research": {
         "blurb": "search, fetch, cite",
-        "skills": ["web-research"],
+        "skills": ["company-research", "web-research"],
     },
     "engineer": {
         "blurb": "inspect workspace, Git and code",
@@ -60,6 +60,7 @@ def select_role(text: str) -> str:
         return "study"
     if any(w in low for w in (
         "search", "research", "look up", "fetch", "current", "source", "cite",
+        "company", "earnings", "revenue", "stock", "investor", "market cap",
     )):
         return "research"
     if any(w in low for w in (

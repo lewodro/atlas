@@ -39,6 +39,7 @@ case "${1:-}" in
   goal)   shift; exec uv run python tools_cli.py goal "$@" ;;
   workspace) shift; exec uv run python tools_cli.py workspace "$@" ;;
   net)    shift; exec uv run python tools_cli.py net "$@" ;;
+  company) shift; exec uv run python tools_cli.py company "$@" ;;
   fs)     shift; exec uv run python tools_cli.py fs "$@" ;;
   user)   shift; exec uv run python memory_cli.py user "$@" ;;
   memory) shift; exec uv run python memory_cli.py memory "$@" ;;

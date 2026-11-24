@@ -46,6 +46,7 @@ import modes
 import orchestrator
 import profiles
 import registry
+import research
 import skills
 import toolcalls
 import workspace
@@ -222,6 +223,8 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     answer_parts: list[str] = []
     fetched_for_skill = False
     git_prompts: set[str] = set()
+    company_researched = False
+    company_nudged = False
     try:
         for _ in range(4):  # bounded multi-tool loop
             content, calls = yield from _tool_round(messages, session_id, user_text, model)
@@ -271,6 +274,12 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                 nudge = tracker.fetch_nudge()
                 if nudge:
                     messages.append({"role": "user", "content": nudge})
+                if company_researched and not company_nudged:
+                    company_nudged = True
+                    messages.append({"role": "user", "content":
+                        "Use the company_research digest above to write the report now. "
+                        "Include sections and name at least two real source URLs. "
+                        "Do not call more tools."})
                     continue
                 if not planned and steps == 0 and not tracker.blocked():
                     planned = True
@@ -323,6 +332,10 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                     args = json.loads(call["arguments"] or "{}")
                 except json.JSONDecodeError:
                     args = {}
+                if call["name"] == "company_research":
+                    wanted = research.extract_company(user_text)
+                    if wanted:
+                        args["company"] = wanted
                 call_id = call["id"] or f"call_{i}"
                 level = registry.permission(call["name"], args)
                 approved = level != "ASK"
@@ -348,6 +361,8 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                     tracker.note_result(call["name"], result["ok"], registry.content(result))
                     if call["name"] == "web_fetch":
                         fetched_for_skill = True
+                    if call["name"] == "company_research" and result["ok"]:
+                        company_researched = True
                     if call["name"] == "git_status" and "diff" not in git_prompts:
                         git_prompts.add("diff")
                     tool_text = registry.content(result)
@@ -379,6 +394,12 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                 nudge = tracker.fetch_nudge()
                 if nudge:
                     messages.append({"role": "user", "content": nudge})
+                if company_researched and not company_nudged:
+                    company_nudged = True
+                    messages.append({"role": "user", "content":
+                        "Use the company_research digest above to write the report now. "
+                        "Include sections and name at least two real source URLs. "
+                        "Do not call more tools."})
                 if skill_id == "github-engineer" and not tool_text.startswith("TOOL ERROR"):
                     if call["name"] == "git_status" and "diff" not in git_prompts:
                         git_prompts.add("diff")
@@ -400,7 +421,26 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                     answer_parts.append(msg.content)
                     yield ("delta", {"text": msg.content})
 
+        if not "".join(answer_parts).strip() and company_researched:
+            from llm import chat as plain
+            msg = plain(messages, None, model=model)
+            if (msg.content or "").strip():
+                answer_parts.append(msg.content.strip())
+                yield ("delta", {"text": msg.content.strip()})
+
         answer = "".join(answer_parts).strip() or "(no answer)"
+        if company_researched and answer != "(no answer)" and "http" not in answer:
+            from llm import chat as plain
+            retry = plain(
+                [{"role": "system", "content":
+                  "Rewrite using only the company_research digest above. Include at least "
+                  "two real source URLs from it. Under 600 words."},
+                 {"role": "user", "content": answer}],
+                None, model=model,
+            )
+            if "http" in (retry.content or ""):
+                answer = retry.content.strip()
+                yield ("replace", {"text": answer})
         if fresh or tracker.searches or tracker.fetches:
             yield ("research", {**tracker.summary(), "period": label})
         active_goal = goals.current()
