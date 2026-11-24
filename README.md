@@ -22,6 +22,21 @@ atlas> You prefer short answers. You're learning Python on an M4.
 
 ---
 
+## What's inside
+
+- **Persistent memory** in local SQLite + Markdown, isolated per profile.
+- **Real tools**: web search/fetch, company research, filesystem, Git, terminal,
+  code execution, images, and local model runtimes. See `docs/tools.md`.
+- **Slash palette**: press `/` anywhere in the composer to insert a skill,
+  tool prompt or goal without leaving the keyboard.
+- **Saved chats**, bulk selection, artifacts, usage and a small local agent
+  workspace — all served from the built-in localhost web UI.
+- **One agent mode**, with study/research/code workflows loaded as skills.
+- **Portable by design**: no machine-specific paths, no cloud account, no API
+  key for local models. Works on macOS, Linux and Windows.
+
+---
+
 ## Requirements
 
 - **Python 3.12+** (the repo pins 3.13 in `.python-version`; `uv` installs it for you)
@@ -31,6 +46,12 @@ atlas> You prefer short answers. You're learning Python on an M4.
   - [LM Studio](https://lmstudio.ai) — default port `1234`
   - llama.cpp server (`:8080`) or vLLM (`:8000`)
 - No API key for local runtimes. No cloud account. No authentication.
+
+Install with `./install.sh` (macOS/Linux) or `.\install.ps1` (Windows). The
+launcher follows symlinks and runs from any folder. `uv` installs Python and
+dependencies; `check.py` verifies your machine and reports how to fix anything
+missing. Runtime data lives under `data/`, notes under `notes/`, and both are
+gitignored — the same repo works on any device without edits.
 
 Everything else is in `uv.lock`. Nothing is downloaded from this repo except code.
 
