@@ -21,6 +21,7 @@ import goals
 import netguard
 import orchestrator
 import registry
+import research
 import skills
 import webtools
 import workspace
@@ -114,6 +115,11 @@ def main() -> int:
     goal_sub.add_parser("clear")
 
     sub.add_parser("workspace", help="show workspace and Git context")
+
+    company = sub.add_parser("company", help="real, dated company research")
+    company.add_argument("name", nargs="+")
+    company.add_argument("--sources", type=int, default=None)
+    company.add_argument("--json", action="store_true")
 
     net = sub.add_parser("net", help="web search and fetch")
     net_sub = net.add_subparsers(dest="action", required=True)
@@ -229,6 +235,14 @@ def main() -> int:
                 else:
                     state = "available" if row["available"] else "not configured"
                     print(f"{row['id']:16} {state:14} {row['permission']:6} {row['provider']:8} {row['description'][:60]}")
+            return 0
+
+        if args.group == "company":
+            result = research.company(" ".join(args.name), sources=args.sources)
+            if args.json:
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+            else:
+                print(result["digest"])
             return 0
 
         if args.group == "net":
