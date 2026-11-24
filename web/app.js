@@ -1446,4 +1446,12 @@ document.addEventListener("keydown", (e) => {
   if (location.hash === "#artifacts") setView("artifacts");
   if (location.hash === "#usage") setView("usage");
   if (location.hash === "#memory") setView("memory");
+
+  const intro = $("#intro");
+  if (intro && !new URLSearchParams(location.search).has("nointro")) {
+    requestAnimationFrame(() => intro.classList.add("play"));
+    setTimeout(() => intro.remove(), 2600);
+  } else if (intro) {
+    intro.remove();
+  }
 })();
