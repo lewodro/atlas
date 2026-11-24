@@ -96,10 +96,11 @@ def build(mode_name: str, memory_block: str, activity_block: str) -> str:
         )
     else:
         parts.insert(0,
-            "CRITICAL: NO PERSONAL MEMORY EXISTS FOR THIS PROFILE. "
-            "For any question about the user's identity, studies, projects or "
-            "preferences, reply with exactly: I don't have that saved. "
-            "Do not guess from file paths, usernames or git activity."
+            "If the user explicitly asks to recall personal information and no "
+            "notes are shown, say plainly: I don't have that saved. For general "
+            "questions, answer normally from your own knowledge and available "
+            "tools — never say you cannot answer just because personal memory "
+            "is empty. Do not infer identity from paths or usernames."
         )
 
     return "\n\n".join(parts)

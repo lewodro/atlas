@@ -32,6 +32,14 @@ atlas> You prefer short answers. You're learning Python on an M4.
 - **Saved chats**, bulk selection, artifacts, usage and a small local agent
   workspace — all served from the built-in localhost web UI.
 - **One agent mode**, with study/research/code workflows loaded as skills.
+- **Autonomous research loop**: Atlas plans several distinct searches, opens
+  sources, extracts evidence, checks answer completeness, reformulates when
+  needed and cites real URLs. The loop runs in the harness, not in the model's
+  prompt, so it works on 2B local models. Search is cached and backed by
+  Wikipedia when a provider throttles requests.
+- **Company files**: company research pulls web sources, clean Wikipedia text
+  and real SEC filings (10-K/10-Q/8-K) with their archive URLs, then answers
+  from that digest. See `skills/company-research/SKILL.md`.
 - **Portable by design**: no machine-specific paths, no cloud account, no API
   key for local models. Works on macOS, Linux and Windows.
 
@@ -244,6 +252,23 @@ atlas bench
 The agent loop selects a skill, calls tools, inspects results and answers.
 Writes require an explicit Allow; DENY tools are never advertised. See
 [docs/agent.md](docs/agent.md).
+
+Questions that need evidence (estimates, dates, comparisons, multilingual or
+conflicting sources) go through `researchloop.py` instead of a single search.
+Progress events in the CLI and web UI show the real queries, inspected pages,
+source counts and reformulations. Budget and timeouts are configurable:
+
+```bash
+export ATLAS_RESEARCH_MAX_QUERIES=6    # distinct searches per question
+export ATLAS_RESEARCH_MAX_PAGES=5      # pages opened
+export ATLAS_RESEARCH_SECONDS=240      # overall budget
+export ATLAS_RESEARCH_MIN_EVIDENCE=2   # sources needed before answering
+```
+
+For a company: `atlas company "NVIDIA" --sources 6` prints the digest,
+including SEC filing URLs. Ask the agent `What does Apple's latest annual
+report say about revenue?` and it will pull the same material and answer from
+it; it never invents a filing, figure or citation.
 
 ---
 
