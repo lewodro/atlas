@@ -33,6 +33,11 @@ const state = {
   accent: "",
   usageOpen: false,
   usagePos: "right",
+  tools: [],
+  skills: [],
+  artifacts: [],
+  workspace: null,
+  toolActivity: [],
 };
 
 /* lifecycle lease (the server stops itself when the last tab closes) */
@@ -187,6 +192,7 @@ function setView(name) {
 
   const titles = {
     tools: ["Tools", "Capabilities available to Atlas on this machine."],
+    skills: ["Skills", "Instruction workflows Atlas loads only when needed."],
     artifacts: ["Artifacts", "Files and outputs Atlas creates or works on."],
     memory: ["Memory", "What Atlas remembers about you, in plain language."],
     usage: ["Usage", "What Atlas has actually done on this machine."],
@@ -201,6 +207,7 @@ function setView(name) {
   if (name === "memory") $("#mem-export").onclick = exportMemories;
 
   if (name === "tools") renderTools();
+  if (name === "skills") renderSkills();
   if (name === "artifacts") renderArtifacts();
   if (name === "memory") refreshMemories();
   if (name === "usage") renderUsage();
@@ -298,7 +305,7 @@ function toolLine(name, result) {
   const el = document.createElement("details");
   el.className = "tool-call";
   el.innerHTML = `
-    <summary><span class="pulse"></span><span>${esc(TOOL_LABELS[name] || `Used ${name}`)}</span>${icon("chevron")}</summary>
+    <summary><span class="pulse"></span><span>${esc(TOOL_LABELS_EXTRA[name] || TOOL_LABELS[name] || `Used ${name}`)}</span>${icon("chevron")}</summary>
     <pre>${esc(result)}</pre>`;
   $("#messages").appendChild(el);
   scrollDown();
@@ -308,6 +315,15 @@ const CATEGORY_LABELS = {
   identity: "Identity", education: "Education", preferences: "Preferences",
   learning: "Learning", communication: "Communication", projects: "Projects",
   "last-seat": "Last Seat", atlas: "Atlas", tennis: "Tennis", goals: "Goals",
+};
+
+const TOOL_LABELS_EXTRA = {
+  web_search: "Searched the web",
+  web_fetch: "Fetched a page",
+  filesystem: "Used the workspace",
+  git_status: "Checked Git status",
+  git_diff: "Read the diff",
+  git_log: "Read commit history",
 };
 function memoryLine(payload) {
   const el = document.createElement("details");
@@ -501,6 +517,37 @@ function parseEvent(block) {
   try { return { name, data: JSON.parse(data) }; } catch { return null; }
 }
 
+function skillLine(name) {
+  const el = document.createElement("div");
+  el.className = "tool";
+  el.innerHTML = `${icon("spark")} <b>${esc(name)}</b> skill loaded`;
+  $("#messages").appendChild(el);
+  scrollDown();
+}
+
+function permissionLine(payload) {
+  const el = document.createElement("div");
+  el.className = "permission-card";
+  el.innerHTML = `
+    <div><b>${esc(payload.tool)}</b> wants permission</div>
+    <code>${esc(payload.preview || "")}</code>
+    <div class="permission-actions">
+      <button type="button" data-allow="true">Allow</button>
+      <button type="button" data-allow="false">Deny</button>
+    </div>`;
+  el.querySelectorAll("button").forEach((button) => {
+    button.onclick = async () => {
+      await api("/api/tools/permission", {
+        method: "POST",
+        body: JSON.stringify({ token: payload.token, allow: button.dataset.allow === "true" }),
+      });
+      el.remove();
+    };
+  });
+  $("#messages").appendChild(el);
+  scrollDown();
+}
+
 function handleEvent(block, reply) {
   const event = parseEvent(block);
   if (!event) return;
@@ -515,6 +562,17 @@ function handleEvent(block, reply) {
     memoryLine(data);
   } else if (name === "error") {
     reply.body.innerHTML = `<span style="color:var(--danger)">${esc(data.message)}</span>`;
+  } else if (name === "skill") {
+    skillLine(data.name);
+  } else if (name === "artifact") {
+    const card = document.createElement("div");
+    card.innerHTML = artifactCard(data);
+    const holder = card.firstElementChild;
+    holder.onclick = () => { setView("artifacts"); renderArtifactPreview(data); };
+    $("#messages").appendChild(holder);
+    scrollDown();
+  } else if (name === "permission") {
+    permissionLine(data);
   } else if (name === "done") {
     reply.text = data.text;
     reply.body.innerHTML = md(data.text);
@@ -592,85 +650,183 @@ async function exportMemories() {
 
 /* --------------------------------------------------------------- tools */
 
-const TOOL_CATALOG = [
-  { icon: "memory", name: "Memory", desc: "Remember, recall, correct and forget durable facts.", available: true },
-  { icon: "pulse", name: "Recent activity", desc: "Local git commits and recently edited files.", available: true },
-  { icon: "plug", name: "Model runtime", desc: "Connect Ollama, LM Studio, llama.cpp or vLLM.", available: true, live: true },
-  { icon: "globe", name: "Web search", desc: "Search the internet during a conversation.", available: false },
-  { icon: "file", name: "Web fetch", desc: "Read a public page and cite its contents.", available: false },
-  { icon: "folder", name: "Filesystem", desc: "Read and edit files in a chosen workspace.", available: false },
-  { icon: "terminal", name: "Terminal", desc: "Run commands in a sandboxed shell.", available: false },
-  { icon: "git", name: "Git / GitHub", desc: "Branches, diffs, issues and pull requests.", available: false },
-  { icon: "image", name: "Image generation", desc: "Create and edit images locally.", available: false },
-  { icon: "code", name: "Code execution", desc: "Run and verify generated code.", available: false },
-  { icon: "database", name: "Last Seat MCP", desc: "Connect the autonomous agent economy project.", available: false },
-  { icon: "plug", name: "Other MCP servers", desc: "Bring your own tool servers.", available: false },
+const FUTURE_TOOLS = [
+  { icon: "terminal", name: "Terminal", desc: "Sandboxed shell. Not implemented." },
+  { icon: "git", name: "GitHub", desc: "Remote issues and pull requests. Local Git is already available." },
+  { icon: "image", name: "Image generation", desc: "Create and edit images locally. Not implemented." },
+  { icon: "code", name: "Code execution", desc: "Run generated code in a sandbox. Not implemented." },
+  { icon: "database", name: "Last Seat MCP", desc: "Project tool server. Not implemented." },
+  { icon: "plug", name: "Other MCP servers", desc: "Register external providers. Not implemented." },
 ];
 
+const CATEGORY_ICON = {
+  web: "globe", filesystem: "folder", git: "git", memory: "memory", general: "plug",
+};
+
+async function refreshTools() {
+  try {
+    state.tools = (await api("/api/tools")).tools || [];
+  } catch { state.tools = []; }
+  try {
+    state.workspace = await api("/api/workspace");
+  } catch { state.workspace = null; }
+  try {
+    state.toolActivity = (await api("/api/tools/activity")).activity || [];
+  } catch { state.toolActivity = []; }
+  if (state.view === "tools") renderTools();
+  if (state.view === "usage") renderUsage();
+}
+
+async function configureTool(name) {
+  if (name === "filesystem") {
+    const current = state.workspace?.root || "";
+    const path = prompt("Workspace folder Atlas may read and edit", current);
+    if (!path) return;
+    try {
+      await api("/api/tools/config", {
+        method: "POST", body: JSON.stringify({ workspace: path }),
+      });
+      await refreshTools();
+    } catch (err) { alert(err.message); }
+    return;
+  }
+  openSettings().then(() => selectSettingsTab("tools"));
+}
+
+function toolCard(t) {
+  const configurable = ["filesystem", "web_search", "web_fetch"].includes(t.id);
+  return `<article class="card">
+    <div class="card-head">${icon(CATEGORY_ICON[t.category] || "plug")}<h3>${esc(t.id)}</h3></div>
+    <p>${esc(t.description)}</p>
+    <span class="pill ${t.available ? "" : "quiet"}">${t.available ? "Available" : "Not configured"}</span>
+    <span class="pill quiet">${esc(t.permission)}</span>
+    <div class="card-foot"><button class="text-btn" data-configure="${esc(t.id)}" ${configurable ? "" : "disabled"}>
+      ${configurable ? "Configure" : "In use"}</button></div>
+  </article>`;
+}
+
 function renderTools() {
-  const active = state.runtimes.find((r) => r.ok);
-  $("#tools-badge").textContent = String(TOOL_CATALOG.filter((t) => t.available).length);
-  const card = (t) => {
-    let status = t.available ? "Available" : "Not configured";
-    let quiet = !t.available;
-    if (t.live) {
-      status = active ? `${active.name} · local` : "No runtime detected";
-      quiet = !active;
-    }
-    return `<article class="card">
-      <div class="card-head">${icon(t.icon)}<h3>${esc(t.name)}</h3></div>
-      <p>${esc(t.desc)}</p>
-      <span class="pill ${quiet ? "quiet" : ""}">${esc(status)}</span>
-      <div class="card-foot"><button class="text-btn" ${t.available ? "" : "disabled"}>
-        ${t.available ? "In use" : "Configure"}</button></div>
-    </article>`;
-  };
+  $("#tools-badge").textContent = String(state.tools.filter((t) => t.available).length);
+  const ws = state.workspace || {};
   $("#workspace-body").innerHTML = `
     <div class="group-label">Available on this machine</div>
-    <div class="card-grid">${TOOL_CATALOG.filter((t) => t.available).map(card).join("")}</div>
-    <div class="group-label">Coming next — UI prepared, not implemented</div>
-    <div class="card-grid">${TOOL_CATALOG.filter((t) => !t.available).map(card).join("")}</div>
-    <div class="group-label">Project workspace</div>
+    <div class="card-grid">${state.tools.map(toolCard).join("")}</div>
+    <div class="group-label">Workspace</div>
     <div class="card">
-      <div class="card-head">${icon("git")}<h3>No repository connected</h3></div>
-      <p>Repository, branch and changed-file status will appear here when Git tools are added.</p>
-    </div>`;
+      <div class="card-head">${icon("folder")}<h3>${esc(ws.repo || (ws.configured ? "Folder workspace" : "No workspace"))}</h3></div>
+      <p>${esc(ws.root || ws.error || "Configure a workspace to enable filesystem and Git tools.")}</p>
+      <span class="pill ${ws.is_git ? "" : "quiet"}">${ws.is_git
+        ? `${esc(ws.branch || "detached")} · ${ws.dirty ? "dirty" : "clean"} · ${ws.changed} changed`
+        : "not a Git repository"}</span>
+    </div>
+    <div class="group-label">Coming next — not implemented</div>
+    <div class="card-grid">${FUTURE_TOOLS.map((t) => `
+      <article class="card">
+        <div class="card-head">${icon(t.icon)}<h3>${esc(t.name)}</h3></div>
+        <p>${esc(t.desc)}</p><span class="pill quiet">Not configured</span>
+      </article>`).join("")}</div>`;
+
+  $("#workspace-body").querySelectorAll("[data-configure]").forEach((button) => {
+    if (button.dataset.configure) button.onclick = () => configureTool(button.dataset.configure);
+  });
+}
+
+/* -------------------------------------------------------------- skills */
+
+async function refreshSkills() {
+  try {
+    state.skills = (await api("/api/skills")).skills || [];
+  } catch { state.skills = []; }
+  if (state.view === "skills") renderSkills();
+}
+
+function renderSkills() {
+  $("#workspace-body").innerHTML = state.skills.length ? `
+    <div class="card-grid">${state.skills.map((s) => `
+      <article class="card">
+        <div class="card-head">${icon("spark")}<h3>${esc(s.name)}</h3></div>
+        <p>${esc(s.description)}</p>
+        <div class="settings-list">${s.tags.map((tag) => `<span>${esc(tag)}</span>`).join("")}</div>
+        <div class="card-foot"><button class="text-btn" data-skill="${esc(s.id)}">View instructions</button></div>
+      </article>`).join("")}</div>` : `
+    <div class="empty-state">${icon("spark")}<strong>No skills installed</strong><span>Add skills in skills/&lt;id&gt;/SKILL.md.</span></div>`;
+
+  $("#workspace-body").querySelectorAll("[data-skill]").forEach((button) => {
+    button.onclick = async () => {
+      const data = await api(`/api/skills/${encodeURIComponent(button.dataset.skill)}`);
+      const skill = data.skill;
+      $("#workspace-body").innerHTML = `<article class="card">
+        <div class="card-head">${icon("spark")}<h3>${esc(skill.name)}</h3></div>
+        <p>${esc(skill.description)}</p>
+        <div class="settings-list">${(skill.tools || []).map((t) => `<span class="on">${esc(t)}</span>`).join("")}</div>
+        <pre class="skill-body">${esc(skill.body)}</pre>
+        <div class="card-foot"><button class="text-btn" id="skill-back">Back</button></div>
+      </article>`;
+      $("#skill-back").onclick = renderSkills;
+    };
+  });
 }
 
 /* ----------------------------------------------------------- artifacts */
 
-const artifacts = []; // real artifacts will be supplied by the backend later
+function artifactIcon(kind) {
+  if (kind === "image") return "image";
+  if (["code", "markdown", "text", "json", "patch"].includes(kind)) return "code";
+  return "file";
+}
 
 function artifactCard(a) {
-  return `<div class="artifact-card">${icon(a.kind === "image" ? "image" : a.kind === "code" ? "code" : "file")}
-    <span class="a-name">${esc(a.name)}</span><span class="pill">${esc(a.type)}</span>
-    <button class="text-btn">Open</button></div>`;
+  return `<div class="artifact-card">${icon(artifactIcon(a.kind))}
+    <span class="a-name">${esc(a.title || a.name)}</span>
+    <span class="pill">${esc(a.kind || a.type)}</span>
+    <button class="text-btn" data-artifact="${esc(a.id)}">Open</button></div>`;
+}
+
+async function refreshArtifacts() {
+  try {
+    state.artifacts = (await api("/api/artifacts")).artifacts || [];
+  } catch { state.artifacts = []; }
+  if (state.view === "artifacts") renderArtifacts();
 }
 
 function renderArtifactList(items) {
   $("#workspace-body").innerHTML = `<div class="artifact-list">${items.map((a) => `
-    <div class="artifact-row">${icon(a.kind === "image" ? "image" : "file")}
-      <span class="a-name">${esc(a.name)}</span>
-      <span class="a-meta">${esc(a.type)}</span>
-      <span class="a-meta">${esc(a.modified || "")}</span>
+    <div class="artifact-row" data-artifact="${esc(a.id)}">
+      ${icon(artifactIcon(a.kind))}
+      <span class="a-name">${esc(a.title)}</span>
+      <span class="a-meta">${esc(a.kind)}</span>
+      <span class="a-meta">${new Date(a.created * 1000).toLocaleDateString()}</span>
     </div>`).join("")}</div>`;
+  $("#workspace-body").querySelectorAll("[data-artifact]").forEach((row) => {
+    row.onclick = () => {
+      const item = items.find((a) => a.id === row.dataset.artifact);
+      if (item) renderArtifactPreview(item);
+    };
+  });
 }
 
 function renderArtifactPreview(a) {
+  const media = a.kind === "image" && a.path
+    ? `<img class="artifact-image" src="/api/artifacts/${encodeURIComponent(a.id)}/content" alt="${esc(a.title)}" />`
+    : `<pre>${esc(a.preview || "(no text preview)")}</pre>`;
   $("#workspace-body").innerHTML = `<div class="artifact-preview">
-    <div class="card-head">${icon("file")}<h3>${esc(a.name)}</h3></div>
-    <pre>${esc(a.content || "")}</pre></div>`;
+    <div class="card-head">${icon(artifactIcon(a.kind))}<h3>${esc(a.title)}</h3></div>
+    <p class="unavailable">${esc(a.kind)} · ${esc(a.path || "stored locally")}</p>
+    ${media}
+    <div class="card-foot"><button class="text-btn" id="artifact-back">Back</button></div>
+  </div>`;
+  $("#artifact-back").onclick = renderArtifacts;
 }
 
 function renderArtifacts() {
-  if (!artifacts.length) {
+  if (!state.artifacts.length) {
     $("#workspace-body").innerHTML = `<div class="empty-state">${icon("artifacts")}
       <strong>No artifacts yet</strong>
-      <span>Documents, code, images and exports Atlas creates will be listed here with a preview.</span>
+      <span>Files Atlas creates or works on will appear here with a preview.</span>
     </div>`;
     return;
   }
-  renderArtifactList(artifacts);
+  renderArtifactList(state.artifacts);
 }
 
 /* ------------------------------------------------------- theme + usage */
@@ -750,6 +906,21 @@ function usageSummary(facts) {
   ];
 }
 
+function toolActivityRows() {
+  const rows = state.toolActivity || [];
+  if (!rows.length) return '<p class="unavailable">no tool calls recorded yet</p>';
+  const counts = {};
+  let failed = 0;
+  rows.forEach((r) => {
+    counts[r.tool] = (counts[r.tool] || 0) + 1;
+    if (!r.ok) failed += 1;
+  });
+  const peak = Math.max(1, ...Object.values(counts));
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])
+    .map(([name, n]) => miniRow(name, n, peak)).join("")
+    + `<p class="unavailable">${rows.length} calls · ${failed} failed · durations recorded</p>`;
+}
+
 async function renderUsage() {
   const facts = await usageFacts();
   const { sessions, memories } = facts;
@@ -794,7 +965,9 @@ async function renderUsage() {
           .map(([c, n]) => miniRow(c, n, catPeak)).join("") || '<p class="unavailable">no memories yet</p>'}
       </section>
       <section class="usage-card">
-        <h3>Not instrumented</h3>
+        <h3>Tool activity</h3>
+        ${toolActivityRows(facts)}
+        <h3 style="margin-top:18px">Not instrumented</h3>
         <p class="unavailable">Tokens, tokens/s, prompt tokens, session duration, tool calls and generated artifacts are not exposed by the current runtime. No numbers are guessed.</p>
       </section>
     </div>`;
@@ -833,6 +1006,14 @@ function cycleUsageDock() {
 const dlg = $("#configure");
 let runtimeCache = { at: 0, list: [] };
 
+function fsAvailable() {
+  return state.tools.find((t) => t.name === "filesystem")?.available || false;
+}
+function fsNote() {
+  const fs = state.tools.find((t) => t.name === "filesystem");
+  return fs?.workspace || fs?.error || "no workspace configured";
+}
+
 function selectSettingsTab(name) {
   document.querySelectorAll(".settings-tabs button").forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === name));
@@ -845,8 +1026,12 @@ document.querySelectorAll(".settings-tabs button").forEach((button) => {
   button.onclick = () => {
     selectSettingsTab(button.dataset.tab);
     if (button.dataset.tab === "tools") {
-      $("#settings-tools").innerHTML = TOOL_CATALOG.map((t) =>
-        `<span class="${t.available ? "on" : ""}">${esc(t.name)} · ${t.available ? "available" : "not configured"}</span>`).join("");
+      const names = ["web_search", "web_fetch", "filesystem"];
+      $("#settings-tools").innerHTML = names.map((name) => {
+        const t = state.tools.find((row) => row.name === name)
+          || { name, available: name === "filesystem" ? fsAvailable() : true };
+        return `<span class="${t.available ? "on" : ""}">${esc(name)} · ${t.available ? "available" : "not configured"}</span>`;
+      }).join("");
     }
   };
 });
@@ -1065,6 +1250,9 @@ document.addEventListener("keydown", (e) => {
   await refreshProfiles();
   await refreshModels();
   refreshRuntimes().catch(() => {});
+  refreshTools().catch(() => {});
+  refreshSkills().catch(() => {});
+  refreshArtifacts().catch(() => {});
   await refreshSessions();
   if (state.sessions.length) await openSession(state.sessions[0].id);
   else await newChat();
