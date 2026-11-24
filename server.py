@@ -476,7 +476,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/":
                 return self._file(WEB / "index.html")
-            if path in {"/app.js", "/style.css"}:
+            if path in {"/app.js", "/style.css", "/slash.js"}:
                 return self._file(WEB / path.lstrip("/"))
             if path == "/api/stats":
                 current = models.load()

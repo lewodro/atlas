@@ -1216,6 +1216,7 @@ const SLASH_ACTIONS = [
 
 let slashItems = [];
 let slashIndex = 0;
+let slashToken = null;
 
 function slashEntries() {
   // Installed skills come straight from /api/skills (skills.list_skills), so
@@ -1283,20 +1284,31 @@ function chooseSlash(index) {
   const item = slashItems[index];
   if (!item) return;
   const input = $("#input");
+  const token = slashToken || { start: input.value.length, end: input.value.length, query: "" };
+  let insert = "";
+  let navigate = null;
   if (item.prefix === "/skill:") {
-    input.value = `/skill:${item.id} `;
+    insert = `/skill:${item.id} `;
   } else if (item.id === "goal") {
-    input.value = "/goal ";
+    insert = "/goal ";
   } else {
-    input.value = "";
-    setView(item.id);
+    navigate = item.id;
   }
+
+  input.value = atlasSlash.replaceSlashToken(input.value, token, insert);
+  const caret = token.start + insert.length;
   $("#slash-menu").hidden = true;
+  slashToken = null;
   input.focus();
+  try { input.setSelectionRange(caret, caret); } catch (e) { /* no selection API */ }
+  if (navigate) setView(navigate);
   input.dispatchEvent(new Event("input"));
 }
 
-function closeSlash() { $("#slash-menu").hidden = true; }
+function closeSlash() {
+  $("#slash-menu").hidden = true;
+  slashToken = null;
+}
 
 /* --------------------------------------------------------------- events */
 
@@ -1342,9 +1354,13 @@ $("#input").addEventListener("keydown", (e) => {
 $("#input").addEventListener("input", (e) => {
   e.target.style.height = "auto";
   e.target.style.height = Math.min(e.target.scrollHeight, innerHeight * 0.4) + "px";
-  const value = e.target.value.trimStart();
-  if (value.startsWith("/") && !value.includes(" ")) renderSlash(value);
-  else closeSlash();
+  const found = atlasSlash.findSlashToken(e.target.value, e.target.selectionStart);
+  if (found) {
+    slashToken = found;
+    renderSlash("/" + found.query);
+  } else {
+    closeSlash();
+  }
 });
 $("#stop").onclick = () => state.controller?.abort();
 $("#new-chat").onclick = () => { setView("chat"); newChat(); };
