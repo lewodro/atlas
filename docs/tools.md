@@ -121,7 +121,9 @@ leaving the browser.
 
 ## Goal execution and learned tool use
 
-When a request needs several actions, `goalrunner.py` runs a bounded loop:
+Action requests always use `goalrunner.py` first — including models that can
+emit native tool calls. Set `ATLAS_USE_GOALRUNNER=0` to keep the older native
+loop. When a request needs several actions, `goalrunner.py` runs a bounded loop:
 short plan → registry validation → real tool calls → compact observations →
 goal check → bounded replan. Steps are deduplicated, read-only steps are safe
 to run in sequence, and writes stay inside the workspace. If a step fails, the
@@ -136,15 +138,23 @@ Two lightweight learning mechanisms improve tool choice over time:
   `rank()` uses Thompson sampling (small epsilon) to favour tools that work on
   similar goals while still exploring. `atlas policy` shows the learned scores.
 - `examples.py` stores plans that reached their goal and retrieves similar
-  ones with TF-IDF cosine similarity. One or two compact examples are added to
-  the planner prompt, which is a form of instance-based learning — no weights,
-  no GPU, no cloud service.
+  ones with **TF-IDF plus semantic embeddings** (the local `nomic-embed-text`
+  model, cached on disk). This lets "make a script" match "write a program".
+  Set `ATLAS_EXAMPLE_SEMANTIC=0` to use keywords only.
+- `feedback.py` grades answers from observed tool output and folds the next
+  user message into the reward: "thanks" is positive, "that's wrong" is a
+  correction. Set `ATLAS_FEEDBACK_MODEL_GRADE=1` to add an optional small-model
+  grader; the deterministic grader is always on. Rewards update both the tool
+  policy and the stored plan quality.
 
-Both stores live in the gitignored local `data/atlas.db` and are per profile.
+All stores live in the gitignored local `data/atlas.db` and are per profile.
+Learning data is portable:
 
 ```bash
 atlas policy                                   # overall tool success
 atlas policy "write a parser, then test it"    # signature, history, examples
+atlas policy --export ~/atlas-learning.json    # back up everything learned
+atlas policy --import ~/atlas-learning.json    # restore on another device
 ```
 
 ## Tests

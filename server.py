@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import errno
 import json
+import os
 import re
 import sys
 import threading
@@ -38,6 +39,7 @@ import agent
 import artifacts
 import freshness
 import fstools
+import feedback
 import goals
 import librarian
 import memory
@@ -193,6 +195,10 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     messages += history
     messages.append({"role": "user", "content": clean})
     memory.log_turn("user", user_text, mode, session_id)
+    try:
+        feedback.followup(user_text)
+    except Exception:
+        pass
 
     if skill_id:
         skill = skills.load_skill(skill_id)
@@ -245,6 +251,33 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
     company_researched = False
     company_nudged = False
     try:
+        # Action requests use the goal-driven executor for every model: it
+        # plans, validates and replans multi-tool work before any native call.
+        if agent.needs_actions(clean) and os.getenv("ATLAS_USE_GOALRUNNER", "1") != "0":
+            import goalrunner
+            goal_events: list[dict] = []
+            outcome = goalrunner.run(clean, model=model,
+                                     on_event=lambda item: goal_events.append(item))
+            for item in goal_events:
+                yield ("goal", item)
+            if outcome["steps"]:
+                for step in outcome["steps"]:
+                    yield ("tool", {
+                        "name": step["tool"], "result": step["text"],
+                        "ok": step["ok"],
+                        "status": "ok" if step["ok"] else "error",
+                        "args": json.dumps(step["args"])[:220],
+                    })
+                text = outcome["answer"]
+                yield ("delta", {"text": text})
+                yield ("research", {**tracker.summary(),
+                                    "actions": outcome["step_count"], "period": label})
+                memory.log_turn("assistant", text, mode, session_id)
+                memory.update_session(session_id)
+                yield ("done", {"session": session_id, "text": text})
+                threading.Thread(target=_journal, args=(user_text,), daemon=True).start()
+                return
+
         for _ in range(4):  # bounded multi-tool loop
             content, calls = yield from _tool_round(messages, session_id, user_text, model)
             if not calls:
@@ -302,34 +335,8 @@ def stream_turn(session_id: str, user_text: str, mode: str, model: str | None = 
                     continue
                 if not planned and steps == 0 and not tracker.blocked():
                     planned = True
-                    # Goal-driven path: validate and execute several tool calls,
-                    # observe each result, then check whether the goal is done.
-                    if agent.needs_actions(clean):
-                        import goalrunner
-                        goal_events: list[dict] = []
-                        outcome = goalrunner.run(
-                            clean, model=model,
-                            on_event=lambda item: goal_events.append(item),
-                        )
-                        for item in goal_events:
-                            yield ("goal", item)
-                        if outcome["steps"]:
-                            steps += outcome["step_count"]
-                            for step in outcome["steps"]:
-                                yield ("tool", {
-                                    "name": step["tool"],
-                                    "result": step["text"],
-                                    "ok": step["ok"],
-                                    "status": "ok" if step["ok"] else "error",
-                                    "args": json.dumps(step["args"])[:220],
-                                })
-                            text = outcome["answer"]
-                            answer_parts = [text]
-                            yield ("delta", {"text": text})
-                            yield ("research", {**tracker.summary(),
-                                                "actions": outcome["step_count"],
-                                                "period": label})
-                            break
+                    # Last-resort one-shot planner if the goal executor found
+                    # no safe step.
                     action_plan = agent.plan(clean)
                     if action_plan["actions"]:
                         steps += len(action_plan["actions"])

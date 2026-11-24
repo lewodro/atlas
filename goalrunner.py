@@ -21,6 +21,7 @@ import time
 
 import config
 import examples
+import feedback
 import llm
 import registry
 import toolpolicy
@@ -338,6 +339,10 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
         answer = _final_report(goal, tools, tier, model)
         if done and tools:
             examples.save(goal, tools, 1.0)
+        try:
+            feedback.finish(goal, tools, answer, _observations(tools), tier, model)
+        except Exception:
+            pass
         emit({"text": goal, "status": "done" if done else "incomplete", "step": reason})
         return {
             "goal": goal, "answer": answer, "done": done,

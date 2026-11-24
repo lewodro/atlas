@@ -7,8 +7,10 @@ a new goal. Everything stays in the user's own SQLite database.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import os
 import re
 import sqlite3
 import time
@@ -19,11 +21,13 @@ import profiles
 import toolpolicy
 
 DB = config.ROOT_DATA / "atlas.db"
+EMBED_CACHE = config.ROOT_DATA / "example_embeddings.json"
 MAX_EXAMPLES = 300
 
 
 def _conn():
     conn = sqlite3.connect(DB)
+    conn.row_factory = sqlite3.Row
     conn.execute(
         """CREATE TABLE IF NOT EXISTS tool_examples (
                id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,12 +92,50 @@ def _vector(text: str, idf: dict[str, float]) -> dict[str, float]:
             for word, count in counts.items()}
 
 
+def _semantic_scores(query: str, documents: list[str]) -> list[float]:
+    """Cosine similarity via the local embedding model, cached on disk.
+
+    Falls back to zeros when the embedding model is unavailable — the TF-IDF
+    channel still works, so planning never depends on it.
+    """
+    if not documents:
+        return []
+    try:
+        import numpy as np
+        import memory
+
+        cache = {}
+        if EMBED_CACHE.exists():
+            cache = json.loads(EMBED_CACHE.read_text())
+        keys = [hashlib.sha1(text.encode("utf-8")).hexdigest()[:20]
+                for text in documents]
+        missing = [documents[i] for i, key in enumerate(keys) if key not in cache]
+        if missing:
+            vectors = memory._embed(missing)
+            for document, vector in zip(missing, vectors):
+                key = hashlib.sha1(document.encode("utf-8")).hexdigest()[:20]
+                cache[key] = vector
+            EMBED_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            EMBED_CACHE.write_text(json.dumps(cache)[:4_000_000])
+
+        def normalised(values):
+            array = np.asarray(values, dtype=np.float32)
+            norm = float(np.linalg.norm(array))
+            return array / norm if norm else array
+
+        question = normalised(memory._embed([query])[0])
+        return [float(np.dot(question, normalised(cache[key])))
+                for key in keys]
+    except Exception:
+        return [0.0] * len(documents)
+
+
 def similar(goal: str, k: int = 2) -> list[dict]:
     """Return the most similar past plans, with their recorded steps."""
     try:
         with _conn() as conn:
             rows = conn.execute(
-                "SELECT goal, steps, score FROM tool_examples "
+                "SELECT id, goal, steps, score FROM tool_examples "
                 "WHERE user_id=? AND score>=0.7 ORDER BY id DESC LIMIT ?",
                 (profiles.active(), MAX_EXAMPLES),
             ).fetchall()
@@ -112,16 +154,21 @@ def similar(goal: str, k: int = 2) -> list[dict]:
     if not query:
         return []
 
+    semantic = _semantic_scores(goal, [str(row[1]) for row in rows]) if (
+        os.getenv("ATLAS_EXAMPLE_SEMANTIC", "1") != "0"
+    ) else [0.0] * len(rows)
+
     scored = []
-    for row, document in zip(rows, documents):
-        vector = _vector(document, idf)
-        similarity = sum(value * vector.get(word, 0.0) for word, value in query.items())
+    for index, row in enumerate(rows):
+        vector = _vector(documents[index], idf)
+        lexical = sum(value * vector.get(word, 0.0) for word, value in query.items())
+        similarity = max(lexical, semantic[index]) if semantic[index] else lexical
         if similarity > 0.18:
             try:
-                steps = json.loads(row[1])
+                steps = json.loads(row[2])
             except (json.JSONDecodeError, TypeError):
                 continue
-            scored.append((similarity, str(row[0])[:160], steps[:4]))
+            scored.append((similarity, str(row[1])[:160], steps[:4]))
     scored.sort(key=lambda item: -item[0])
     return [
         {"similarity": round(score, 2), "goal": goal_text, "steps": steps}
@@ -138,3 +185,18 @@ def prompt_hint(goal: str) -> str:
         tools = ", ".join(str(step.get("tool")) for step in row["steps"])
         lines.append(f"- {row['goal']} -> {tools}")
     return "\n".join(lines)
+
+
+def rate(goal: str, score: float) -> None:
+    """Update the most recently saved plan with a graded quality score."""
+    try:
+        with _conn() as conn:
+            conn.execute(
+                "UPDATE tool_examples SET score=? WHERE id IN "
+                "(SELECT id FROM tool_examples WHERE user_id=? AND sig=? "
+                " ORDER BY id DESC LIMIT 1)",
+                (float(max(0.0, min(1.0, score))), profiles.active(),
+                 toolpolicy.signature(goal)),
+            )
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        pass

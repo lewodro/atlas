@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import re
 import subprocess
 import sys
@@ -26,6 +27,7 @@ import artifacts
 import context
 import freshness
 import fstools
+import feedback
 import librarian
 import netguard
 import memory
@@ -141,6 +143,10 @@ def turn(
 ) -> str:
     """One turn. Time-sensitive requests cannot finish without a web search."""
     memory.log_turn("user", user_text, mode, memory.cli_session())
+    try:
+        feedback.followup(user_text)
+    except Exception:
+        pass
     fresh = freshness.required(user_text) and freshness.web_available()
     label = freshness.period(user_text) if fresh else ""
     skill_id = "web-research" if fresh else skills.select_skill(user_text)
@@ -155,6 +161,18 @@ def turn(
         if write_memory and remember:
             journal(user_text)
         return result
+
+    # Action requests go through the goal-driven executor first, regardless of
+    # whether the model can emit native tool calls. This keeps planning,
+    # observation and replanning identical across small and larger models.
+    if agent.needs_actions(user_text) and os.getenv("ATLAS_USE_GOALRUNNER", "1") != "0":
+        import goalrunner
+        outcome = goalrunner.run(
+            user_text, tier=tier,
+            on_event=lambda item: print(f"  · {item.get('step', '')}", flush=True),
+        )
+        if outcome["steps"]:
+            return complete(outcome["answer"])
 
     for _ in range(4):  # bounded multi-tool loop
         msg = chat(messages, tool_definitions(), tier=tier)
@@ -230,18 +248,8 @@ def turn(
             # JSON plan per turn, executed by the harness inside the workspace.
             if not planned and steps == 0 and not tracker.blocked():
                 planned = True
-                # Goal-driven multi-tool path: plan, act, observe, replan.
-                if agent.needs_actions(user_text):
-                    import goalrunner
-                    outcome = goalrunner.run(
-                        user_text, tier=tier,
-                        on_event=lambda item: print(
-                            f"  · {item.get('step', '')}", flush=True
-                        ),
-                    )
-                    if outcome["steps"]:
-                        steps += outcome["step_count"]
-                        return complete(outcome["answer"])
+                # Last-resort one-shot planner if the goal executor found no
+                # safe step (rare: usually a malformed model plan).
                 action_plan = agent.plan(user_text, tier=tier)
                 if action_plan["actions"]:
                     steps += len(action_plan["actions"])

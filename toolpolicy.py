@@ -11,6 +11,7 @@ tools that are already legal for the current task.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import time
@@ -61,6 +62,7 @@ def signature(text: str) -> str:
 
 def _conn():
     conn = sqlite3.connect(DB)
+    conn.row_factory = sqlite3.Row
     conn.execute(
         """CREATE TABLE IF NOT EXISTS tool_policy (
                sig      TEXT NOT NULL,
@@ -69,10 +71,18 @@ def _conn():
                n        INTEGER NOT NULL DEFAULT 0,
                success  INTEGER NOT NULL DEFAULT 0,
                total_ms INTEGER NOT NULL DEFAULT 0,
+               reward   REAL NOT NULL DEFAULT 0,
+               reward_n INTEGER NOT NULL DEFAULT 0,
                updated  INTEGER NOT NULL,
                PRIMARY KEY (sig, tool, user_id)
            )"""
     )
+    # Older databases predate the reward columns.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tool_policy)")}
+    if "reward" not in columns:
+        conn.execute("ALTER TABLE tool_policy ADD COLUMN reward REAL NOT NULL DEFAULT 0")
+    if "reward_n" not in columns:
+        conn.execute("ALTER TABLE tool_policy ADD COLUMN reward_n INTEGER NOT NULL DEFAULT 0")
     return conn
 
 
@@ -109,7 +119,7 @@ def stats(sig: str, limit: int = 6) -> list[dict]:
     try:
         with _conn() as conn:
             rows = conn.execute(
-                "SELECT tool, n, success, total_ms FROM tool_policy "
+                "SELECT tool, n, success, total_ms, reward, reward_n FROM tool_policy "
                 "WHERE sig=? AND user_id=? AND n>0 ORDER BY n DESC LIMIT ?",
                 (sig, profiles.active(), limit),
             ).fetchall()
@@ -120,6 +130,8 @@ def stats(sig: str, limit: int = 6) -> list[dict]:
             "tool": row[0], "n": row[1], "success": row[2],
             "mean": (1 + row[2]) / (2 + row[1]),
             "avg_ms": row[3] / max(1, row[1]),
+            "reward": row[4] / max(1, row[5]),
+            "reward_n": row[5],
         }
         for row in rows
     ]
@@ -143,7 +155,9 @@ def rank(tools: list[str], sig: str, explore: float = 0.0) -> list[str]:
             alpha, beta = 1 + row["success"], 1 + row["n"] - row["success"]
             score = random.betavariate(alpha, beta)
         else:
-            score = row["mean"]
+            # 70% observed success, 30% graded user feedback when available.
+            feedback = 0.5 + 0.5 * max(-1.0, min(1.0, row["reward"]))
+            score = 0.7 * row["mean"] + 0.3 * feedback if row["reward_n"] else row["mean"]
         # Very slow tools are mildly penalised; never disqualified.
         if row and row["avg_ms"] > 3000:
             score *= 0.9
@@ -177,3 +191,69 @@ def top(limit: int = 10) -> list[dict]:
          "mean": (1 + row[2]) / (2 + row[1])}
         for row in rows if row[1]
     ]
+
+
+def reward(sig: str, tool: str, value: float) -> None:
+    """Fold explicit or graded feedback into the tool's local score."""
+    try:
+        with _conn() as conn:
+            conn.execute(
+                "UPDATE tool_policy SET reward=reward+?, reward_n=reward_n+1 "
+                "WHERE sig=? AND tool=? AND user_id=?",
+                (float(max(-1.0, min(1.0, value))), sig, tool, profiles.active()),
+            )
+    except (sqlite3.Error, OSError):
+        pass
+
+
+_LEARN_TABLES = ("tool_policy", "tool_examples", "feedback_events", "feedback_last")
+
+
+def export_all() -> dict:
+    """Portable snapshot of everything Atlas has learned locally."""
+    payload: dict = {"version": 1}
+    with _conn() as conn:
+        for table in _LEARN_TABLES:
+            try:
+                rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+                payload[table] = [dict(row) for row in rows]
+            except sqlite3.Error:
+                payload[table] = []
+    return payload
+
+
+def import_all(payload: dict) -> dict:
+    """Merge a learning snapshot into this profile's local database."""
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise ValueError("unrecognised learning snapshot")
+    counts = {}
+    with _conn() as conn:
+        for table in _LEARN_TABLES:
+            rows = payload.get(table) or []
+            if not rows:
+                counts[table] = 0
+                continue
+            columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
+            usable = [column for column in columns if column in rows[0]]
+            placeholders = ",".join("?" for _ in usable)
+            names = ",".join(usable)
+            for row in rows:
+                conn.execute(
+                    f"INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})",
+                    [row.get(column) for column in usable],
+                )
+            counts[table] = len(rows)
+    return counts
+
+
+def export_json(path: str) -> int:
+    data = export_all()
+    target = __import__("pathlib").Path(path).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+    return sum(len(value) for value in data.values() if isinstance(value, list))
+
+
+def import_json(path: str) -> dict:
+    source = __import__("pathlib").Path(path).expanduser()
+    return import_all(json.loads(source.read_text()))

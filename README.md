@@ -43,9 +43,11 @@ atlas> You prefer short answers. You're learning Python on an M4.
 - **Goal-driven tool use**: the harness plans, validates, executes, observes
   and replans multiple tool calls toward a goal — even when the local model
   cannot emit native tool calls. See `goalrunner.py`.
-- **Local online learning**: a tiny Bayesian tool-success policy and kNN
-  retrieval of past successful plans adapt tool choice to the task. No cloud
-  training data, no telemetry; everything lives in `data/atlas.db`.
+- **Local online learning**: a Bayesian tool-success policy with Thompson
+  sampling, semantic kNN retrieval of past successful plans, and answer-quality
+  plus user-feedback rewards adapt tool choice to the task. No cloud training
+  data, no telemetry; everything lives in `data/atlas.db` and can be exported
+  with `atlas policy --export file.json`.
 - **Portable by design**: no machine-specific paths, no cloud account, no API
   key for local models. Works on macOS, Linux and Windows.
 
@@ -253,6 +255,7 @@ atlas workspace                      # root, repo, branch, clean/dirty
 atlas goal set "summarize the last commit"
 atlas policy                              # learned tool success rates
 atlas policy "create a python file and test it"   # task-specific history
+atlas policy --export ~/atlas-learning.json       # portable learning backup
 atlas agents roles
 atlas bench
 ```

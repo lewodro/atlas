@@ -116,6 +116,9 @@ def main() -> int:
 
     policy = sub.add_parser("policy", help="learned tool success rates and past plans")
     policy.add_argument("text", nargs="*")
+    policy.add_argument("--export", metavar="FILE", help="save learned data to a JSON file")
+    policy.add_argument("--import", dest="import_file", metavar="FILE",
+                        help="merge learned data from a JSON file")
 
     sub.add_parser("workspace", help="show workspace and Git context")
 
@@ -243,6 +246,14 @@ def main() -> int:
         if args.group == "policy":
             import examples
             import toolpolicy
+            if args.export:
+                count = toolpolicy.export_json(args.export)
+                print(f"exported {count} learned records to {args.export}")
+                return 0
+            if args.import_file:
+                counts = toolpolicy.import_json(args.import_file)
+                print("imported:", json.dumps(counts))
+                return 0
             text = " ".join(args.text).strip()
             if not text:
                 print("Overall learned tool success (Beta posterior mean):")

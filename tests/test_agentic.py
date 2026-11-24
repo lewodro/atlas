@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -96,7 +97,8 @@ class AgentLoop(unittest.TestCase):
                 return {"tool": tool, "ok": True, "data": "saved", "error": None,
                         "duration_ms": 1}
 
-            with patch.object(main, "chat", side_effect=replies), \
+            with patch.dict(os.environ, {"ATLAS_USE_GOALRUNNER": "0"}), \
+                 patch.object(main, "chat", side_effect=replies), \
                  patch.object(agent, "execute", side_effect=lambda actions: [
                      {"id": "plan_0", "name": a["tool"], "args": a["args"],
                       "text": "saved", "ok": True} for a in actions
