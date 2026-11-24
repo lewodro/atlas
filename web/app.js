@@ -324,6 +324,8 @@ const TOOL_LABELS_EXTRA = {
   git_status: "Checked Git status",
   git_diff: "Read the diff",
   git_log: "Read commit history",
+  terminal: "Ran a terminal command",
+  file_manager: "Managed workspace files",
 };
 function memoryLine(payload) {
   const el = document.createElement("details");
@@ -660,7 +662,8 @@ const FUTURE_TOOLS = [
 ];
 
 const CATEGORY_ICON = {
-  web: "globe", filesystem: "folder", git: "git", memory: "memory", general: "plug",
+  web: "globe", filesystem: "folder", git: "git", terminal: "terminal",
+  skills: "spark", memory: "memory", general: "plug",
 };
 
 async function refreshTools() {
@@ -1026,12 +1029,9 @@ document.querySelectorAll(".settings-tabs button").forEach((button) => {
   button.onclick = () => {
     selectSettingsTab(button.dataset.tab);
     if (button.dataset.tab === "tools") {
-      const names = ["web_search", "web_fetch", "filesystem"];
-      $("#settings-tools").innerHTML = names.map((name) => {
-        const t = state.tools.find((row) => row.name === name)
-          || { name, available: name === "filesystem" ? fsAvailable() : true };
-        return `<span class="${t.available ? "on" : ""}">${esc(name)} · ${t.available ? "available" : "not configured"}</span>`;
-      }).join("");
+      $("#settings-tools").innerHTML = state.tools.map((row) =>
+        `<span class="${row.available ? "on" : ""}">${esc(row.id)} · ${esc(row.permission)}</span>`
+      ).join("");
     }
   };
 });

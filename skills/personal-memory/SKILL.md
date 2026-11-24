@@ -10,7 +10,8 @@ tools: [search_notes, list_memories, remember]
 Use this when the user asks what you know about them, or states a durable fact.
 
 1. For a question, use `search_notes` and `list_memories` with the topic.
-2. Synthesize only retrieved facts. Say "I don't have that saved" for gaps.
+2. Synthesize only retrieved facts. Say "I don't have that saved" only when no
+   fact was retrieved at all. Never say it while retrieved facts are present.
 3. Never dump the whole memory store. Answer the question asked.
 4. For a new fact, require an explicit statement from the user. Save one
    self-contained sentence beginning with "The user".

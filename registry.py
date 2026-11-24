@@ -23,6 +23,7 @@ import config
 import fstools
 import gittools
 import skills
+import termtools
 import webtools
 
 PERMISSIONS_FILE = config.ROOT_DATA / "permissions.json"
@@ -242,12 +243,47 @@ def _filesystem(args: dict) -> Any:
     raise ValueError("action must be read, write or list")
 
 
+def _git_init(args: dict) -> str:
+    return gittools.init_repo()
+
+
 def _git_status(args: dict) -> str:
     return gittools.status_text()
 
 
 def _git_diff(args: dict) -> str:
     return gittools.diff_text()
+
+
+def _file_manager(args: dict) -> Any:
+    action = str(args.get("action", "")).lower()
+    path_value = str(args.get("path") or "").strip()
+    destination = str(args.get("destination") or "").strip()
+    if action == "move":
+        path = path_value or destination
+    else:
+        candidates = [path_value, destination]
+        path = next((c for c in candidates if "/" in c or "." in Path(c).name), None) \
+            or next((c for c in candidates if c), ".") or "."
+    if action == "list":
+        return fstools.list_dir(path)
+    if action == "read":
+        return fstools.read(path)
+    if action == "write":
+        text = fstools.write(path, args.get("content", ""))
+        return {"ok": True, "data": text,
+                "artifact_hint": {"title": path, "kind": "file", "path": path}}
+    if action == "mkdir":
+        return fstools.mkdir(path)
+    if action == "move":
+        return fstools.move(path, str(args.get("new_path") or destination))
+    if action == "delete":
+        return fstools.delete(path)
+    raise ValueError("action must be list, read, write, mkdir, move or delete")
+
+
+def _terminal(args: dict) -> str:
+    return termtools.run(args.get("command", ""))
 
 
 def _skills_list(args: dict) -> str:
@@ -298,6 +334,30 @@ def register_builtins() -> None:
         available=lambda: fstools.status()["available"],
     ))
     register(ToolSpec(
+        id="file_manager",
+        description="Manage workspace files: list, read, write, mkdir, move, delete. write needs a full file path e.g. demo/note.txt; mkdir makes folders first.",
+        parameters={"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["list", "read", "write", "mkdir", "move", "delete"]},
+            "path": {"type": "string", "description": "Relative file path, e.g. demo/note.txt."},
+            "destination": {"type": "string", "description": "Target path; also used as path when path is omitted."},
+            "new_path": {"type": "string", "description": "Destination for move."},
+            "content": {"type": "string", "description": "Required for write."}},
+            "required": ["action", "path"]},
+        handler=_file_manager, category="filesystem", provider="atlas",
+        permission=lambda args: ("ALLOW" if str(args.get("action", "")).lower()
+                                 in ("list", "read") else "ASK"),
+        available=lambda: fstools.status()["available"],
+    ))
+    register(ToolSpec(
+        id="terminal",
+        description="Run an allowlisted read-only command: ls, pwd, cat, tree, git status, git log, git diff, git branch. Use a space, e.g. 'git status'.",
+        parameters={"type": "object", "properties": {
+            "command": {"type": "string", "description": "e.g. ls or git status"}},
+            "required": ["command"]},
+        handler=_terminal, category="terminal", provider="atlas",
+        available=lambda: fstools.status()["available"],
+    ))
+    register(ToolSpec(
         id="skills_list",
         description="List installed skill names and descriptions. Load one with skills_load when its workflow fits.",
         parameters={"type": "object", "properties": {}},
@@ -308,6 +368,14 @@ def register_builtins() -> None:
         description="Load the full instructions of one skill by id, only when needed.",
         parameters={"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
         handler=_skills_load, category="skills", provider="atlas",
+    ))
+    register(ToolSpec(
+        id="git_init",
+        description="Initialize a Git repository in the workspace root. Safe, no flags. Only when not already a repo.",
+        parameters={"type": "object", "properties": {}},
+        handler=_git_init, category="git", provider="atlas",
+        permission="ASK",
+        available=lambda: not gittools.is_repo() and fstools.status()["available"],
     ))
     register(ToolSpec(
         id="git_status",

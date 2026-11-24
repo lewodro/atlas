@@ -78,3 +78,17 @@ def log_text(limit: int = 8) -> str:
         return "No Git repository in the configured workspace."
     count = max(1, min(int(limit), 30))
     return _git("log", "--oneline", "-n", str(count)).strip() or "(no commits)"
+
+
+def init_repo() -> str:
+    """Initialize a Git repository in the workspace root. Safe, no flags."""
+    target = fstools.workspace()
+    if is_repo():
+        return f"Workspace is already a Git repository: {target.name}"
+    result = subprocess.run(
+        ["git", "init", "-q"], cwd=str(target),
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    if result.returncode:
+        raise fstools.ToolError((result.stderr or "git init failed").strip()[:300])
+    return f"Initialized Git repository at {target}"

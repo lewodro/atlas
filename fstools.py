@@ -2,7 +2,8 @@
 
 Nothing outside the configured workspace can be read or written. Hidden files
 and directories (.env, .git, .ssh, …), key material and symlinks are refused.
-There is no delete, move, glob or shell primitive — only read, write and list.
+Mutating operations (write, mkdir, move, delete) are permission-gated and
+stay inside the workspace. There is no shell primitive.
 """
 
 from __future__ import annotations
@@ -112,6 +113,9 @@ def write(path: str, content: str) -> str:
     if len(content.encode("utf-8")) > MAX_BYTES:
         raise ToolError("content is too large")
     target = _safe_path(path)
+    name = target.name
+    if "." not in name and "/" not in str(path).strip():
+        raise ToolError("write needs a filename such as note.txt or demo/note.txt")
     if target.exists() and not target.is_file():
         raise ToolError("target is not a regular file")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -167,3 +171,47 @@ def status() -> dict:
             result["available"] = False
             result["error"] = str(exc)
     return result
+
+
+# ------------------------------------------------------------ file manager
+
+def _assert_mutable(target: Path) -> None:
+    root = workspace()
+    if target == root:
+        raise ToolError("refusing to modify the workspace root")
+
+
+def mkdir(path: str) -> str:
+    target = _safe_path(path)
+    _assert_mutable(target)
+    if target.exists() and not target.is_dir():
+        raise ToolError("a file already exists at that path")
+    target.mkdir(parents=True, exist_ok=True)
+    return f"Created directory {target.relative_to(workspace())}"
+
+
+def move(source: str, destination: str) -> str:
+    src, dst = _safe_path(source), _safe_path(destination)
+    _assert_mutable(src)
+    _assert_mutable(dst)
+    if not src.exists():
+        raise ToolError("source does not exist")
+    if dst.exists():
+        raise ToolError("destination already exists")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    src.rename(dst)
+    return f"Moved {src.relative_to(workspace())} -> {dst.relative_to(workspace())}"
+
+
+def delete(path: str) -> str:
+    target = _safe_path(path)
+    _assert_mutable(target)
+    if not target.exists():
+        raise ToolError("path does not exist")
+    if target.is_dir():
+        if any(target.iterdir()):
+            raise ToolError("directory is not empty")
+        target.rmdir()
+    else:
+        target.unlink()
+    return f"Deleted {target.relative_to(workspace())}"
