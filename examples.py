@@ -144,7 +144,7 @@ def similar(goal: str, k: int = 2) -> list[dict]:
     if not rows:
         return []
 
-    documents = [str(row[0]) for row in rows]
+    documents = [str(row[1]) for row in rows]
     df: Counter = Counter()
     for document in documents:
         df.update(set(_tokens(document)))

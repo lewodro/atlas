@@ -157,6 +157,66 @@ atlas policy --export ~/atlas-learning.json    # back up everything learned
 atlas policy --import ~/atlas-learning.json    # restore on another device
 ```
 
+## Providers and data egress
+
+Atlas speaks one API shape (OpenAI-compatible chat completions), so local
+runtimes and hosted APIs use the same code path. List them with:
+
+```bash
+atlas models --list-providers
+```
+
+Local runtimes (Ollama, LM Studio, llama.cpp, vLLM) need no key and keep data on
+the machine. Hosted presets are ordered by ease: **OpenRouter** (one key, many
+models), **Groq** (fast free tier), **Gemini** (free tier), then DeepSeek,
+Together, Mistral and OpenAI. Connect with:
+
+```bash
+atlas models --provider openrouter --use openai/gpt-4o-mini
+```
+
+Keys are read from environment variables listed in `.env.example`; Atlas never
+writes them into tracked source. Selecting a hosted preset records explicit
+egress approval. A manually entered remote `--endpoint` is blocked until
+`ATLAS_ALLOW_REMOTE=1` is set.
+
+Every call appends a redacted line to `data/egress.jsonl`: destination host,
+provider, model, message role counts and character counts, tool names, and
+flags for local paths / URLs / emails / memory markers. Message contents are
+not stored. Inspect it with `atlas models --egress`, or preview a payload
+before sending with `atlas models --dry-run "question"`.
+
+## Your own tools
+
+```bash
+atlas tools custom-init       # writes data/custom_tools.json with an example
+atlas tools custom-list       # validate and list definitions
+```
+
+Each entry is a small JSON record:
+
+```json
+{
+  "name": "echo_args",
+  "kind": "echo",
+  "description": "Return the arguments I pass",
+  "args": {"text": {"type": "string"}},
+  "required": ["text"]
+}
+```
+
+Kinds:
+
+- `echo` — returns its arguments; safest way to test a schema.
+- `command` — runs a **fixed** allowlisted read-only command (`git`, `ls`,
+  `pwd`, `cat`, `tree`, `echo`) with `{arg}` placeholders; no shell chaining.
+- `http` — GETs a **fixed** public URL with query parameters, checked by the
+  SSRF guard; requires approval because data leaves the machine.
+
+Custom tools are registered through the same registry, so the CLI, API, GUI
+and model tool list all see them. Their calls are recorded in the egress ledger
+when they make an HTTP request.
+
 ## Tests
 
 ```bash

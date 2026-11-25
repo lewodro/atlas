@@ -19,7 +19,10 @@ from __future__ import annotations
 
 from openai import OpenAI
 
+import os
+
 import config
+import egress
 import models
 from config import (
     FRONTIER_API_KEY,
@@ -63,6 +66,8 @@ def active(tier: str = "local") -> tuple[OpenAI, str]:
         return _client(FRONTIER_BASE_URL, FRONTIER_API_KEY), FRONTIER_MODEL
 
     current = models.load()
+    # A local tier pointed at a hosted API must be an explicit user choice.
+    egress.guard(current["base_url"])
     return _client(current["base_url"], current["api_key"]), current["model"]
 
 
@@ -85,6 +90,12 @@ def chat(
     """One completion. Returns the assistant message object."""
     client, default_model = active(tier)
     name = model or default_model
+    if os.getenv("ATLAS_EGRESS_LOG", "1") != "0":
+        try:
+            base = FRONTIER_BASE_URL if tier == "frontier" else models.load()["base_url"]
+            egress.record(messages, tools, base, name)
+        except Exception:
+            pass
     use_tools = tools if name not in _no_tools else None
     # Bound generation: without this, some local runtimes stream indefinitely
     # and saturate the model server after a few agent turns.
@@ -128,6 +139,12 @@ def stream_chat(
     """Same call, but streaming. Iterate chunks; each has .choices[0].delta."""
     client, default_model = active(tier)
     name = model or default_model
+    if os.getenv("ATLAS_EGRESS_LOG", "1") != "0":
+        try:
+            base = FRONTIER_BASE_URL if tier == "frontier" else models.load()["base_url"]
+            egress.record(messages, tools, base, name)
+        except Exception:
+            pass
     use_tools = tools if name not in _no_tools else None
     options.setdefault("max_tokens", _budget(name))
 

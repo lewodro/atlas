@@ -72,6 +72,20 @@ class ToolSpec:
 
 
 _SPECS: dict[str, ToolSpec] = {}
+_CUSTOM_LOADED = False
+
+
+def _ensure_custom() -> None:
+    """Load gitignored user tools once, through this same registry."""
+    global _CUSTOM_LOADED
+    if _CUSTOM_LOADED:
+        return
+    _CUSTOM_LOADED = True
+    try:
+        import customtools
+        customtools.register_all()
+    except Exception:
+        pass
 
 
 def register(spec: ToolSpec) -> ToolSpec:
@@ -80,6 +94,7 @@ def register(spec: ToolSpec) -> ToolSpec:
 
 
 def specs() -> dict[str, ToolSpec]:
+    _ensure_custom()
     return dict(_SPECS)
 
 
@@ -98,6 +113,7 @@ def _permissions() -> dict:
 
 
 def permission(tool_id: str, args: dict | None = None) -> str:
+    _ensure_custom()
     override = _permissions().get(tool_id)
     if override in LEVELS:
         return override
@@ -126,6 +142,7 @@ def is_available(spec: ToolSpec) -> bool:
 
 def definitions() -> list[dict]:
     """Small, current tool list for the local model."""
+    _ensure_custom()
     return [
         spec.definition()
         for spec in _SPECS.values()
@@ -134,6 +151,7 @@ def definitions() -> list[dict]:
 
 
 def metadata() -> list[dict]:
+    _ensure_custom()
     return [spec.metadata() for spec in _SPECS.values()]
 
 
@@ -142,6 +160,7 @@ NEEDS_APPROVAL = "NEEDS_APPROVAL"
 
 def run(tool_id: str, args: dict | None = None, *, approved: bool = False) -> dict:
     """Execute a tool and record real activity. Always returns a structured result."""
+    _ensure_custom()
     args = args or {}
     started = time.perf_counter()
     result: dict[str, Any] = {

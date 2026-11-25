@@ -60,6 +60,9 @@ def main() -> int:
     run.add_argument("id")
     run.add_argument("--args", default="{}", help="JSON object of tool arguments")
     tools_sub.add_parser("permissions")
+    tools_sub.add_parser("custom-init")
+    tools_sub.add_parser("custom-list")
+    tools_sub.add_parser("custom-validate")
 
     skill = sub.add_parser("skills", help="installed instruction skills")
     skill_sub = skill.add_subparsers(dest="action", required=True)
@@ -222,6 +225,26 @@ def main() -> int:
             return 0
 
         if args.group == "tools":
+            if args.action == "custom-init":
+                import customtools
+                print("example custom tool written to", customtools.create_example())
+                return 0
+            if args.action == "custom-list":
+                import customtools
+                for spec in customtools.load():
+                    error = customtools.validate(spec)
+                    state = "valid" if not error else f"invalid: {error}"
+                    print(f"{str(spec.get('name')):18} {str(spec.get('kind')):8} {state}")
+                if not customtools.load():
+                    print("no custom tools; run: atlas tools custom-init")
+                print("file:", customtools.FILE)
+                return 0
+            if args.action == "custom-validate":
+                import customtools
+                errors = [customtools.validate(spec) for spec in customtools.load()]
+                failed = [error for error in errors if error]
+                print("all custom tools valid" if not failed else "\n".join(failed))
+                return 0 if not failed else 1
             if args.action == "permissions":
                 for row in registry.metadata():
                     print(f"{row['id']:16} {row['permission']:6} {row['category']}")

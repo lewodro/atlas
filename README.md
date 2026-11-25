@@ -48,6 +48,15 @@ atlas> You prefer short answers. You're learning Python on an M4.
   plus user-feedback rewards adapt tool choice to the task. No cloud training
   data, no telemetry; everything lives in `data/atlas.db` and can be exported
   with `atlas policy --export file.json`.
+- **Many providers, one interface**: Ollama/LM Studio/llama.cpp/vLLM locally,
+  or OpenRouter, Groq, Gemini, DeepSeek, Together, Mistral and OpenAI through
+  their OpenAI-compatible APIs. See `atlas models --list-providers`.
+- **Visible data egress**: a redacted ledger records where each request went,
+  what was in it (sizes, roles, tool names, path/URL flags), and remote calls
+  are blocked until explicitly approved. Preview with `atlas models --dry-run`.
+- **Your own tools**: `atlas tools custom-init` creates a JSON tool you define
+  yourself (echo, allowlisted command, or fixed-URL HTTP); it appears in the
+  same registry as built-in tools.
 - **Portable by design**: no machine-specific paths, no cloud account, no API
   key for local models. Works on macOS, Linux and Windows.
 

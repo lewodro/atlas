@@ -27,6 +27,9 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 import config
+import egress
+import providers
+import registry
 
 SETTINGS = config.ROOT_DATA / "settings.json"
 FIELDS = ("base_url", "api_key", "model")
@@ -211,11 +214,15 @@ def describe() -> dict:
     ]
     return {
         "base_url": current["base_url"],
-        "provider": config.provider_for_base_url(current["base_url"]) or "custom",
         "model": current["model"],
         "models": models,
         "reachable": bool(models),
-        "remote": config.REMOTE,
+        "remote": not providers.is_local(current["base_url"]),
+        "provider": (providers.for_base_url(current["base_url"]) or {}).get("id")
+                    or config.provider_for_base_url(current["base_url"]) or "custom",
+        "egress": (providers.for_base_url(current["base_url"]) or {}).get("egress")
+                  or ("nothing leaves this machine"
+                      if providers.is_local(current["base_url"]) else "custom remote endpoint"),
     }
 
 
@@ -227,9 +234,60 @@ def main() -> None:
     parser.add_argument("--api-key", dest="api_key", help="key for that endpoint (local ones ignore it)")
     parser.add_argument("--use", help="make this model id the default")
     parser.add_argument("--runtime", help="use a detected runtime: ollama|lmstudio|llamacpp|vllm")
+    parser.add_argument("--provider", help="use a named preset: run 'atlas models --list-providers'")
+    parser.add_argument("--list-providers", action="store_true", help="show local and hosted presets")
+    parser.add_argument("--egress", action="store_true", help="show the redacted outbound-call ledger")
+    parser.add_argument("--dry-run", metavar="TEXT",
+                        help="preview what would be sent, without sending it")
     parser.add_argument("--pull", metavar="MODEL", help="download it with Ollama, then use it")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
+
+    if args.list_providers:
+        rows = providers.list_presets()
+        print(f"{'id':12} {'where':8} {'key':6} {'name':16} note")
+        for row in rows:
+            where = "local" if row["local"] else "api"
+            key = "ready" if row["has_key"] else "needed"
+            print(f"{row['id']:12} {where:8} {key:6} {row['name'][:16]:16} {row['egress'][:70]}")
+        print("\nConnect: atlas models --provider openrouter --use <model>")
+        return 0
+
+    if args.egress:
+        rows = egress.ledger()
+        if not rows:
+            print("no outbound calls recorded yet")
+        for row in rows:
+            print(json.dumps(row, ensure_ascii=False))
+        return 0
+
+    if args.dry_run:
+        current = load()
+        summary = egress.preview(
+            [{"role": "system", "content": "system prompt"},
+             {"role": "user", "content": args.dry_run}],
+            registry.definitions(), current["base_url"], current["model"],
+        )
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.provider:
+        preset = providers.get(args.provider)
+        if not preset:
+            raise SystemExit("unknown provider; run: atlas models --list-providers")
+        key = providers.api_key(preset)
+        if not preset["local"] and not key:
+            raise SystemExit(
+                f"set {preset['key_env']} in .env first. {preset['install']}"
+            )
+        args.endpoint = preset["base_url"]
+        args.api_key = key
+        if not preset["local"]:
+            egress.approve_remote()
+            print(f"Remote egress approved for {preset['name']}.")
+            print(f"What is sent: {preset['egress']}")
+        if args.use:
+            args.api_key = key
 
     if args.runtime:
         match = next((r for r in RUNTIMES if args.runtime.lower() in r[0].lower().replace(" ", "")), None)
