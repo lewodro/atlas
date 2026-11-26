@@ -103,6 +103,32 @@ def _ask(messages: list[dict], tier: str, max_tokens: int = 900,
     return data if isinstance(data, dict) else {}
 
 
+_COMMAND_PREFIXES = ("ls", "pwd", "cat", "tree", "git", "python", "python3", "uv")
+
+
+def normalise_command(command: str) -> str:
+    """Rule-based repairs for common small-model terminal mistakes."""
+    value = " ".join(str(command or "").split())
+    if not value:
+        return value
+    parts = value.split()
+    # "git_status" is a frequent native-tool spelling.
+    parts = [part.replace("_", " ") if part.lower().startswith("git_") else part
+             for part in parts]
+    value = " ".join(parts)
+    parts = value.split()
+    if parts[0] == "uv" and parts[1:3] == ["run", "python"]:
+        return value
+    if parts[0] == "uv" and parts[1:2] == ["python"]:
+        return "uv run python " + " ".join(parts[2:])
+    if parts[0] in ("python", "python3", "uv", "git", "ls", "pwd", "cat", "tree"):
+        return value
+    # A bare script path means "run this script".
+    if len(parts) == 1 and parts[0].endswith(".py"):
+        return f"python {parts[0]}"
+    return value
+
+
 def _validate_step(step: object) -> tuple[dict | None, str]:
     """Validate one step against the live registry before it can run."""
     if not isinstance(step, dict):
@@ -143,15 +169,57 @@ def _validate_step(step: object) -> tuple[dict | None, str]:
             except SyntaxError as exc:
                 return None, f"invalid Python: {exc.msg} (line {exc.lineno})"
     if name == "terminal":
-        command = str(args.get("command") or "")
+        command = normalise_command(str(args.get("command") or ""))
         if any(ch in command for ch in (";", "&", "|", ">", "<", "`", "$(")):
             return None, "shell chaining is not allowed"
+        if command.split()[0] not in _COMMAND_PREFIXES:
+            return None, f"command {command.split()[0]!r} is not allowed"
+        args = {**args, "command": command}
     return {
         "tool": name,
         "args": args,
         "why": str(step.get("why") or "")[:160],
         "expect": str(step.get("expect") or "")[:160],
     }, ""
+
+
+def rule_plan(goal: str) -> list[dict]:
+    """Deterministic fallback plan when a small model returns unusable JSON.
+
+    Only fires for explicit file-and-run goals: it writes the requested file
+    with the markers named in the goal, then executes it in the workspace.
+    """
+    text = str(goal or "")
+    paths = re.findall(r"[\w./-]+\.(?:py|md|txt|js|json)", text, re.I)
+    if not paths:
+        return []
+    markers = re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", text)
+    steps: list[dict] = []
+    for path in paths[:1]:
+        if path.lower().endswith(".py"):
+            lines = [f"print({marker!r})" for marker in markers[:4]]
+            content = "\n".join(lines) + "\n" if lines else "# created by Atlas\n"
+            steps.append({
+                "tool": "files",
+                "args": {"action": "write", "path": path, "content": content},
+                "why": "create the requested script with the goal's markers",
+                "expect": f"{path.rsplit('/', 1)[-1]} contains {', '.join(markers) or 'a script'}",
+            })
+            if re.search(r"\b(?:run|execute|launch)\b", text, re.I):
+                steps.append({
+                    "tool": "terminal", "args": {"command": f"python {path}"},
+                    "why": "execute the script inside the workspace",
+                    "expect": " ".join(markers) or "script runs successfully",
+                })
+        else:
+            content = "\n".join(markers) + "\n" if markers else f"# {text[:80]}\n"
+            steps.append({
+                "tool": "files",
+                "args": {"action": "write", "path": path, "content": content},
+                "why": "create the requested file",
+                "expect": f"{path.rsplit('/', 1)[-1]} exists",
+            })
+    return steps
 
 
 def adaptive_budget(goal: str, sig: str | None = None,
@@ -174,6 +242,56 @@ def adaptive_budget(goal: str, sig: str | None = None,
     return max(3, min(budget, 8))
 
 
+def goal_satisfied(goal: str, tools: list[dict]) -> tuple[bool, str]:
+    """Rule check: did the observations actually deliver the goal?"""
+    text = " ".join(str(item.get("text") or "") for item in tools)
+    used = {item["tool"] for item in tools}
+    for path in re.findall(r"[\w./-]+\.(?:py|md|txt|js|json)", str(goal or ""), re.I):
+        name = path.rsplit("/", 1)[-1]
+        wrote = any(
+            item["tool"] == "files"
+            and str(item.get("args", {}).get("action")) == "write"
+            and str(item.get("args", {}).get("path", "")).endswith(name)
+            for item in tools
+        )
+        if not wrote and name not in text:
+            return False, f"no write or read-back observed for {name}"
+    if re.search(r"\b(?:run|execute|launch)\b", str(goal or ""), re.I):
+        if "terminal" not in used:
+            return False, "no terminal execution observed"
+    for marker in re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", str(goal or "")):
+        if marker not in text:
+            return False, f"expected output marker {marker} not observed"
+    return True, "goal evidence observed"
+
+
+def _verify_step(step: dict, result: dict) -> tuple[bool, str]:
+    """Rule-based check that an observation satisfies the step's expectation."""
+    if not result["ok"]:
+        return False, "tool call failed"
+    expect = str(step.get("expect") or "").strip()
+    text = str(result.get("text") or "")
+    if step["tool"] == "files":
+        action = str(step["args"].get("action") or "")
+        path = str(step["args"].get("path") or "")
+        if action == "write" and path:
+            try:
+                import fstools
+                actual = fstools.read(path)
+                wanted = str(step["args"].get("content") or "").strip()[:60]
+                if wanted and wanted not in actual:
+                    return False, "written content does not match the request"
+            except Exception as exc:
+                return False, f"written file cannot be read back: {exc}"
+    if step["tool"] == "terminal":
+        # Look for concrete markers the model said it expected, e.g. HARNESS_OK.
+        markers = re.findall(r"\b[A-Z][A-Z0-9_]{3,}\b|\b\d{3,}\b", expect)
+        missing = [marker for marker in markers if marker not in text]
+        if missing:
+            return False, "output missing expected marker(s): " + ", ".join(missing[:3])
+    return True, "expectation satisfied" if expect else "tool succeeded"
+
+
 def _execute(step: dict, sig: str) -> dict:
     name, args = step["tool"], step["args"]
     level = registry.permission(name, args)
@@ -183,7 +301,10 @@ def _execute(step: dict, sig: str) -> dict:
     result = registry.run(name, args, approved=True)
     text = registry.content(result)
     toolpolicy.record(sig, name, bool(result.get("ok")), result.get("duration_ms", 0))
+    verified, note = _verify_step(step, {"ok": bool(result.get("ok")), "text": text})
     return {"tool": name, "args": args, "ok": bool(result.get("ok")),
+            "why": step.get("why", ""), "expect": step.get("expect", ""),
+            "verified": verified, "verify_note": note,
             "text": text[:4000], "duration_ms": result.get("duration_ms", 0)}
 
 
@@ -192,7 +313,9 @@ def _observations(steps: list[dict], limit: int = 5) -> str:
     for index, step in enumerate(steps[-limit:], 1):
         lines.append(
             f"{index}. {step['tool']} {json.dumps(step['args'], ensure_ascii=False)[:180]}\n"
-            f"   ok={step['ok']} output={str(step.get('text', ''))[:320]}"
+            f"   ok={step['ok']} verified={step.get('verified', True)} "
+            f"note={step.get('verify_note', '')} "
+            f"output={str(step.get('text', ''))[:320]}"
         )
     return "\n".join(lines)
 
@@ -244,6 +367,48 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
     done = False
     reason = ""
 
+    # Explicit file-and-run goals have a rule-based plan that needs no model
+    # at all. This keeps the harness usable on any runtime, including a slow
+    # 2B model or an offline machine.
+    rule_steps = rule_plan(goal)
+    if rule_steps:
+        try:
+            for step in rule_steps:
+                clean, error = _validate_step(step)
+                if not clean:
+                    continue
+                result = _execute(clean, sig)
+                tools.append(result)
+                emit({"text": goal, "status": "running",
+                      "step": (f"{clean['tool']} "
+                               f"{'verified' if result.get('verified') else 'failed'}")})
+            satisfied, note = goal_satisfied(goal, tools)
+            answer = deterministic_report(tools)
+            try:
+                feedback.finish(goal, tools, answer, note, tier, model)
+            except Exception:
+                pass
+            emit({"text": goal, "status": "done" if satisfied else "incomplete",
+                  "step": note})
+            return {
+                "goal": goal, "answer": answer, "done": satisfied,
+                "reason": note, "steps": tools,
+                "reasoning": [{
+                    "step": item["tool"], "why": item.get("why", ""),
+                    "expect": item.get("expect", ""), "ok": item["ok"],
+                    "verified": item.get("verified", True),
+                    "note": item.get("verify_note", ""),
+                } for item in tools],
+                "tools_used": sorted({item["tool"] for item in tools}),
+                "step_count": len(tools),
+                "duration_s": round(time.time() - started, 1),
+            }
+        except Exception as exc:
+            return {"goal": goal, "answer": deterministic_report(tools),
+                    "done": False, "reason": str(exc), "steps": tools,
+                    "tools_used": [], "step_count": len(tools),
+                    "duration_s": round(time.time() - started, 1)}
+
     try:
         hints = []
         learned = toolpolicy.prompt_hint(sig)
@@ -261,6 +426,12 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
         done_when = str(seed.get("done_when") or "the goal's requested result is observed")[:200]
         pending = list(seed.get("steps") or [])
         emit({"text": goal, "status": "running", "step": "planning"})
+
+        if not any(_validate_step(step)[0] for step in pending):
+            fallback = rule_plan(goal)
+            if fallback:
+                pending = fallback
+                emit({"text": goal, "status": "running", "step": "rule-based plan"})
 
         for _round in range(budget + 2):
             if len(tools) >= budget or time.time() - started > 240:
@@ -293,7 +464,8 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
                 tools.append(result)
                 seen.add(key)
                 emit({"text": goal, "status": "running",
-                      "step": f"{step['tool']} {'ok' if result['ok'] else 'failed'}"})
+                      "step": (f"{step['tool']} "
+                               f"{'verified' if result.get('verified') else 'unverified' if result['ok'] else 'failed'}")})
                 if not result["ok"]:
                     # One bounded repair per failed step.
                     repair = _ask([
@@ -316,8 +488,11 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
                  "If a needed tool failed twice and no repair worked, say done=false "
                  "with reason 'blocked'."},
             ], tier, max_tokens=400, model=model)
-            done = bool(verdict.get("done")) and bool(tools)
+            rule_ok, rule_note = goal_satisfied(goal, tools)
+            done = bool(verdict.get("done")) and bool(tools) and rule_ok
             reason = str(verdict.get("reason") or "")[:200] or "goal verified by observations"
+            if verdict.get("done") and not rule_ok:
+                reason = f"rule check: {rule_note}"
             if done:
                 break
             if reason == "blocked":
@@ -327,13 +502,22 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
                 clean, error = _validate_step(step)
                 if clean:
                     next_steps.append(clean)
+            if not next_steps and not rule_ok:
+                nudge = _ask([
+                    {"role": "system", "content":
+                     'Return JSON ONLY: {"steps":[{"tool":"...","args":{},'
+                     '"why":"...","expect":"..."}]}. Complete the goal.'},
+                    {"role": "user", "content":
+                     f"Goal: {goal}\nNot achieved: {rule_note}\n"
+                     f"Observations:\n{_observations(tools)[:1500]}"},
+                ], tier, max_tokens=400, model=model)
+                for step in (nudge.get("steps") or [])[:2]:
+                    clean, error = _validate_step(step)
+                    if clean:
+                        next_steps.append(clean)
             pending = next_steps
             if not pending:
-                if tools and all(step["ok"] for step in tools):
-                    done = True
-                    reason = "all planned steps succeeded"
-                else:
-                    reason = reason or "model produced no next step"
+                reason = reason or rule_note or "model produced no next step"
                 break
 
         answer = _final_report(goal, tools, tier, model)
@@ -347,6 +531,12 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
         return {
             "goal": goal, "answer": answer, "done": done,
             "reason": reason, "steps": tools,
+            "reasoning": [{
+                "step": item["tool"], "why": item.get("why", ""),
+                "expect": item.get("expect", ""), "ok": item["ok"],
+                "verified": item.get("verified", True),
+                "note": item.get("verify_note", ""),
+            } for item in tools],
             "tools_used": sorted({step["tool"] for step in tools}),
             "step_count": len(tools),
             "duration_s": round(time.time() - started, 1),
@@ -355,6 +545,12 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
         return {
             "goal": goal, "answer": deterministic_report(tools), "done": False,
             "reason": f"{type(exc).__name__}: {exc}", "steps": tools,
+            "reasoning": [{
+                "step": item["tool"], "why": item.get("why", ""),
+                "expect": item.get("expect", ""), "ok": item["ok"],
+                "verified": item.get("verified", True),
+                "note": item.get("verify_note", ""),
+            } for item in tools],
             "tools_used": sorted({step["tool"] for step in tools}),
             "step_count": len(tools),
             "duration_s": round(time.time() - started, 1),

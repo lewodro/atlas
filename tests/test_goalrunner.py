@@ -82,6 +82,26 @@ class Validation(unittest.TestCase):
             self.assertIsNone(clean)
             self.assertTrue(error)
 
+    def test_rule_plan_and_goal_check(self):
+        goal = "Create demo/x.py with a script that prints RULE_OK, then run it"
+        steps = gr.rule_plan(goal)
+        self.assertEqual([step["tool"] for step in steps], ["files", "terminal"])
+        self.assertIn("RULE_OK", steps[0]["args"]["content"])
+        self.assertEqual(steps[1]["args"]["command"], "python demo/x.py")
+        self.assertFalse(gr.goal_satisfied(goal, [])[0])
+        self.assertTrue(gr.goal_satisfied(goal, [
+            {"tool": "files", "args": {"action": "write", "path": "demo/x.py"},
+             "text": "Wrote demo/x.py", "ok": True},
+            {"tool": "terminal", "args": {"command": "python demo/x.py"},
+             "text": "RULE_OK", "ok": True},
+        ])[0])
+
+    def test_command_normalisation(self):
+        self.assertEqual(gr.normalise_command("demo/x.py"), "python demo/x.py")
+        self.assertEqual(gr.normalise_command("git_status"), "git status")
+        self.assertEqual(gr.normalise_command("uv python demo/x.py"),
+                         "uv run python demo/x.py")
+
     def test_budget_scales_with_goal(self):
         simple = gr.adaptive_budget("list files")
         complex_goal = gr.adaptive_budget(
@@ -110,6 +130,7 @@ class Runner(unittest.TestCase):
              "text": "hello", "duration_ms": 4},
         ]
         with patch.object(gr, "_ask", side_effect=[plan, check]), \
+             patch.object(gr, "rule_plan", return_value=[]), \
              patch.object(gr, "_execute", side_effect=outcomes), \
              patch.object(gr, "_final_report", return_value="Created and verified a.md."), \
              patch.object(gr.toolpolicy, "record"), \
@@ -130,6 +151,7 @@ class Runner(unittest.TestCase):
         outcome = {"tool": "files", "args": plan["steps"][0]["args"], "ok": False,
                    "text": "not found", "duration_ms": 3}
         with patch.object(gr, "_ask", side_effect=[plan, {"steps": []}, check]), \
+             patch.object(gr, "rule_plan", return_value=[]), \
              patch.object(gr, "_execute", return_value=outcome), \
              patch.object(gr.toolpolicy, "record"), \
              patch.object(gr.examples, "save"):

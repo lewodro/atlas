@@ -1139,6 +1139,38 @@ async function renderRuntimes() {
   });
 }
 
+async function renderProviders() {
+  const data = await api("/api/providers");
+  const hosted = (data.providers || []).filter((p) => !p.local);
+  $("#cfg-providers").innerHTML = hosted.map((p) => `
+    <button type="button" class="runtime ${p.has_key ? "" : "off"}" data-provider="${esc(p.id)}">
+      <b>${esc(p.name)}</b><small>${p.has_key ? "key ready" : "key needed"}</small>
+    </button>`).join("");
+  $("#cfg-providers").querySelectorAll("button").forEach((button) => {
+    button.onclick = async () => {
+      const status = $("#cfg-provider-status");
+      status.textContent = "Connecting…";
+      try {
+        const r = await api("/api/providers/select", {
+          method: "POST",
+          body: JSON.stringify({ provider: button.dataset.provider }),
+        });
+        if (r.error) {
+          status.textContent = `${r.error}. ${r.install || ""}`;
+          return;
+        }
+        $("#cfg-url").value = r.base_url || "";
+        $("#cfg-key").value = "";
+        $("#cfg-model").value = (r.models || [])[0] || "";
+        status.textContent = `${r.provider} connected · ${r.egress || ""}`;
+        await refreshModels();
+      } catch (err) {
+        status.textContent = err.message;
+      }
+    };
+  });
+}
+
 async function openSettings() {
   selectSettingsTab("appearance");
   const info = await api("/api/models");
@@ -1148,6 +1180,7 @@ async function openSettings() {
   $("#cfg-status").textContent = info.reachable
     ? `${info.models.length} models found` : "No local model server detected";
   await renderRuntimes();
+  await renderProviders();
   dlg.showModal();
 }
 

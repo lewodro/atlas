@@ -39,6 +39,7 @@ import agent
 import artifacts
 import freshness
 import fstools
+import egress
 import feedback
 import goals
 import librarian
@@ -47,6 +48,7 @@ import models
 import modes
 import orchestrator
 import profiles
+import providers
 import registry
 import research
 import researchloop
@@ -617,6 +619,9 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if path == "/api/memories/export":
                 return self._json(profiles.export(profiles.active()))
+            if path == "/api/providers":
+                return self._json({"providers": providers.list_presets(),
+                                   "egress": egress.ledger(20)})
             if path == "/api/models":
                 query = parse_qs(urlparse(self.path).query)
                 other = (query.get("base_url") or [None])[0]
@@ -704,6 +709,24 @@ class Handler(BaseHTTPRequestHandler):
                 if self.server.browser_lease:
                     self.server.browser_lease.close()
                 return self._json({"ok": True}, 202)
+
+            if path == "/api/providers/select":
+                preset = providers.get(body.get("provider", ""))
+                if not preset:
+                    return self._json({"error": "unknown provider"}, 404)
+                key = providers.api_key(preset)
+                if not preset["local"] and not key:
+                    return self._json({
+                        "error": f"set {preset['key_env']} in .env first",
+                        "install": preset["install"],
+                    }, 400)
+                models.save(base_url=preset["base_url"], api_key=key)
+                if not preset["local"]:
+                    egress.approve_remote()
+                return self._json({
+                    "ok": True, "provider": preset["name"],
+                    "egress": preset["egress"], **models.describe(),
+                })
 
             if path == "/api/profiles":
                 action = body.get("action") or "switch"
