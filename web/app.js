@@ -1088,6 +1088,74 @@ function fsNote() {
   return fs?.workspace || fs?.error || "no workspace configured";
 }
 
+async function refreshFleet() {
+  const data = await api("/api/fleet");
+  $("#harness-shared").textContent = data.shared || "";
+  const select = $("#harness-provider");
+  if (!select.options.length) {
+    select.innerHTML = (data.providers || []).map((p) =>
+      `<option value="${esc(p.id)}">${esc(p.name)} (${p.local ? "local" : "api"})</option>`
+    ).join("");
+  }
+  $("#harness-instances").innerHTML = (data.instances || []).map((row) => `
+    <div class="runtime-row">
+      <b>${esc(row.label)}</b>
+      <small>${esc(row.provider)} · ${esc(row.model || "default")} · port ${row.port} · ${esc(row.status)}</small>
+      <button type="button" data-fleet="${esc(row.id)}" data-act="${row.status === "running" ? "stop" : "start"}">${row.status === "running" ? "Stop" : "Start"}</button>
+      <button type="button" data-fleet="${esc(row.id)}" data-act="remove">Remove</button>
+    </div>`).join("") || "<p class='status-line'>No agent instances yet.</p>";
+  $("#harness-instances").querySelectorAll("button[data-fleet]").forEach((button) => {
+    button.onclick = async () => {
+      $("#harness-status").textContent = `${button.dataset.act}ing…`;
+      try {
+        await api("/api/fleet", {
+          method: "POST",
+          body: JSON.stringify({ action: button.dataset.act, id: button.dataset.fleet }),
+        });
+        await refreshFleet();
+        $("#harness-status").textContent = "done";
+      } catch (err) { $("#harness-status").textContent = err.message; }
+    };
+  });
+}
+
+$("#harness-create").onclick = async () => {
+  const status = $("#harness-status");
+  status.textContent = "Creating…";
+  try {
+    const result = await api("/api/fleet", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "create",
+        label: $("#harness-label").value,
+        workspace: $("#harness-workspace").value,
+        provider: $("#harness-provider").value,
+        model: $("#harness-model").value,
+      }),
+    });
+    if (result.error) { status.textContent = result.error; return; }
+    await api("/api/fleet", { method: "POST",
+      body: JSON.stringify({ action: "start", id: result.instance.id }) });
+    await refreshFleet();
+    status.textContent = `created and started ${result.instance.label}`;
+  } catch (err) { status.textContent = err.message; }
+};
+
+$("#harness-run").onclick = async () => {
+  const status = $("#harness-status");
+  status.textContent = "Running goal on agents…";
+  try {
+    const result = await api("/api/fleet/goal", {
+      method: "POST", body: JSON.stringify({ goal: $("#harness-goal").value }),
+    });
+    if (result.error) { status.textContent = result.error; return; }
+    $("#harness-result").textContent = (result.agents || []).map((row) =>
+      `${row.label}: ${row.answer || row.error || "(no answer)"}`
+    ).join("\n\n") + "\n\nSynth: " + (result.synthesis || "");
+    status.textContent = `completed in ${result.duration_s}s`;
+  } catch (err) { status.textContent = err.message; }
+};
+
 function selectSettingsTab(name) {
   document.querySelectorAll(".settings-tabs button").forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === name));
@@ -1099,6 +1167,7 @@ function selectSettingsTab(name) {
 document.querySelectorAll(".settings-tabs button").forEach((button) => {
   button.onclick = () => {
     selectSettingsTab(button.dataset.tab);
+    if (button.dataset.tab === "harness") refreshFleet();
     if (button.dataset.tab === "tools") {
       $("#settings-tools").innerHTML = state.tools.map((row) =>
         `<span class="${row.available ? "on" : ""}">${esc(row.id)} · ${esc(row.permission)}</span>`

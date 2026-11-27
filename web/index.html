@@ -192,6 +192,7 @@
       <button type="button" data-tab="models">Models</button>
       <button type="button" data-tab="tools">Tools</button>
       <button type="button" data-tab="memory">Memory</button>
+      <button type="button" data-tab="harness">Harness</button>
     </aside>
 
     <form id="config-form" class="settings-main">
@@ -232,6 +233,27 @@
           <button type="button" id="cfg-pull-btn">Pull</button>
         </div>
         <p class="status-line" id="cfg-status"></p>
+      </section>
+
+      <section class="settings-panel" data-panel="harness" hidden>
+        <div class="field-label">Shared drive</div>
+        <p class="status-line" id="harness-shared"></p>
+        <div id="harness-instances"></div>
+        <div class="pull-row">
+          <input id="harness-label" placeholder="agent label" spellcheck="false" />
+          <input id="harness-workspace" placeholder="/path/to/workspace" spellcheck="false" />
+        </div>
+        <div class="pull-row">
+          <select id="harness-provider"></select>
+          <input id="harness-model" placeholder="model id (optional)" spellcheck="false" />
+          <button type="button" id="harness-create">Create</button>
+        </div>
+        <div class="pull-row">
+          <input id="harness-goal" placeholder="Goal for all running agents" spellcheck="false" />
+          <button type="button" id="harness-run">Orchestrate</button>
+        </div>
+        <p class="status-line" id="harness-status"></p>
+        <pre id="harness-result" class="tool-note"></pre>
       </section>
 
       <section class="settings-panel" data-panel="tools" hidden>

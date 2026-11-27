@@ -86,6 +86,11 @@ def _ensure_custom() -> None:
         customtools.register_all()
     except Exception:
         pass
+    try:
+        import sharetools
+        sharetools.register()
+    except Exception:
+        pass
 
 
 def register(spec: ToolSpec) -> ToolSpec:

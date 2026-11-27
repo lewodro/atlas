@@ -57,6 +57,12 @@ atlas> You prefer short answers. You're learning Python on an M4.
 - **Your own tools**: `atlas tools custom-init` creates a JSON tool you define
   yourself (echo, allowlisted command, or fixed-URL HTTP); it appears in the
   same registry as built-in tools.
+- **Multi-agent harness**: start several Atlas instances (each with its own
+  workspace, memory, provider and port) from the web UI or CLI, orchestrate a
+  goal across all of them, and let them exchange files through a shared drive.
+- **Local-to-frontier bridge**: a local model turns a loose request into a
+  compact brief, then an explicitly configured frontier API answers it. Both
+  stages are labelled and the outbound call is recorded in the egress ledger.
 - **Portable by design**: no machine-specific paths, no cloud account, no API
   key for local models. Works on macOS, Linux and Windows.
 

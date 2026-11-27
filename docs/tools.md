@@ -217,6 +217,40 @@ Custom tools are registered through the same registry, so the CLI, API, GUI
 and model tool list all see them. Their calls are recorded in the egress ledger
 when they make an HTTP request.
 
+## Multi-agent harness, shared drive and frontier bridge
+
+Start several Atlas instances from the CLI or the web UI's **Harness** tab.
+Each instance is its own server process with isolated data, workspace, model
+and provider; the controller starts/stops it and sends goals to it.
+
+```bash
+atlas fleet create Builder ~/dev/my-project --provider ollama --model qwen2.5:3b
+atlas fleet start <id>
+atlas fleet list
+atlas fleet goal "Create a shared report on the project"
+atlas fleet shared
+```
+
+All instances see one shared drive (`data/shared` by default, override with
+`ATLAS_SHARED_DRIVE`). The `share` tool supports list/read/write/mkdir and
+`handoff`, which appends a timestamped message to `HANDOFF.md`. Agents can
+therefore leave files and notes for each other while their own workspaces stay
+private.
+
+`atlas fleet goal` sends the request to every running agent in parallel, then
+synthesizes their reports. If `ATLAS_FRONTIER_*` is configured, the synthesis
+goes through the bridge; otherwise a local summary is returned.
+
+The bridge (`atlas bridge "question"`) works in two explicit stages:
+
+1. the configured local model produces a compact JSON brief (goal, constraints,
+   missing information, instructions);
+2. the frontier API answers that brief, with the call recorded in the egress
+   ledger.
+
+Nothing is sent to a frontier API unless all three `ATLAS_FRONTIER_*` settings
+are present. Frontier output is always labelled with its model and endpoint.
+
 ## Tests
 
 ```bash

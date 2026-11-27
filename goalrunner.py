@@ -31,7 +31,7 @@ import toolpolicy
 _ALLOWED = {
     "files", "terminal", "web_search", "web_fetch", "company_research",
     "plot_function", "skills_list", "skills_load", "git_status", "git_diff",
-    "git_log", "git_init",
+    "git_log", "git_init", "share",
 }
 
 PLAN_SYSTEM = """You are Atlas's goal executor. Return JSON ONLY:
@@ -194,18 +194,19 @@ def rule_plan(goal: str) -> list[dict]:
     if not paths:
         return []
     markers = re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", text)
+    shared = bool(re.search(r"\bshared\b", text, re.I))
     steps: list[dict] = []
     for path in paths[:1]:
         if path.lower().endswith(".py"):
             lines = [f"print({marker!r})" for marker in markers[:4]]
             content = "\n".join(lines) + "\n" if lines else "# created by Atlas\n"
             steps.append({
-                "tool": "files",
+                "tool": "share" if shared else "files",
                 "args": {"action": "write", "path": path, "content": content},
                 "why": "create the requested script with the goal's markers",
                 "expect": f"{path.rsplit('/', 1)[-1]} contains {', '.join(markers) or 'a script'}",
             })
-            if re.search(r"\b(?:run|execute|launch)\b", text, re.I):
+            if not shared and re.search(r"\b(?:run|execute|launch)\b", text, re.I):
                 steps.append({
                     "tool": "terminal", "args": {"command": f"python {path}"},
                     "why": "execute the script inside the workspace",
@@ -214,7 +215,7 @@ def rule_plan(goal: str) -> list[dict]:
         else:
             content = "\n".join(markers) + "\n" if markers else f"# {text[:80]}\n"
             steps.append({
-                "tool": "files",
+                "tool": "share" if shared else "files",
                 "args": {"action": "write", "path": path, "content": content},
                 "why": "create the requested file",
                 "expect": f"{path.rsplit('/', 1)[-1]} exists",
@@ -249,7 +250,7 @@ def goal_satisfied(goal: str, tools: list[dict]) -> tuple[bool, str]:
     for path in re.findall(r"[\w./-]+\.(?:py|md|txt|js|json)", str(goal or ""), re.I):
         name = path.rsplit("/", 1)[-1]
         wrote = any(
-            item["tool"] == "files"
+            item["tool"] in ("files", "share")
             and str(item.get("args", {}).get("action")) == "write"
             and str(item.get("args", {}).get("path", "")).endswith(name)
             for item in tools

@@ -37,6 +37,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 import activity
 import agent
 import artifacts
+import bridge
+import fleet
 import freshness
 import fstools
 import egress
@@ -52,6 +54,7 @@ import providers
 import registry
 import research
 import researchloop
+import sharetools
 import skills
 import toolcalls
 import workspace
@@ -622,6 +625,17 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/providers":
                 return self._json({"providers": providers.list_presets(),
                                    "egress": egress.ledger(20)})
+            if path == "/api/fleet":
+                return self._json({"instances": fleet.list_instances(),
+                                   "shared": str(fleet.shared_drive()),
+                                   "providers": providers.list_presets()})
+            if path == "/api/drive":
+                try:
+                    listing = sharetools.run({"action": "list", "path": "."})
+                except Exception as exc:
+                    listing = str(exc)
+                return self._json({"path": str(fleet.shared_drive()),
+                                   "listing": listing})
             if path == "/api/models":
                 query = parse_qs(urlparse(self.path).query)
                 other = (query.get("base_url") or [None])[0]
@@ -709,6 +723,44 @@ class Handler(BaseHTTPRequestHandler):
                 if self.server.browser_lease:
                     self.server.browser_lease.close()
                 return self._json({"ok": True}, 202)
+
+            if path == "/api/fleet":
+                action = body.get("action") or "list"
+                if action == "create":
+                    try:
+                        row = fleet.create(
+                            body.get("label", ""), body.get("workspace", ""),
+                            body.get("provider", "ollama"), body.get("model", ""),
+                            body.get("role", "general"),
+                        )
+                        return self._json({"ok": True, "instance": row}, 201)
+                    except Exception as exc:
+                        return self._json({"error": str(exc)}, 400)
+                if action == "start":
+                    try:
+                        return self._json({"ok": True,
+                                           "instance": fleet.start(body.get("id", ""))})
+                    except Exception as exc:
+                        return self._json({"error": str(exc)}, 400)
+                if action == "stop":
+                    return self._json({"ok": fleet.stop(body.get("id", ""))})
+                if action == "remove":
+                    return self._json({"ok": fleet.remove(body.get("id", ""))})
+                return self._json({"instances": fleet.list_instances()})
+
+            if path == "/api/fleet/goal":
+                try:
+                    return self._json(fleet.orchestrate(
+                        body.get("goal", ""), body.get("ids"),
+                    ))
+                except Exception as exc:
+                    return self._json({"error": str(exc)}, 400)
+
+            if path == "/api/bridge":
+                return self._json(bridge.run(
+                    body.get("question", ""), model=body.get("model"),
+                    refine=bool(body.get("refine", True)),
+                ))
 
             if path == "/api/providers/select":
                 preset = providers.get(body.get("provider", ""))

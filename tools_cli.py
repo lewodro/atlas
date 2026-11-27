@@ -123,6 +123,26 @@ def main() -> int:
     policy.add_argument("--import", dest="import_file", metavar="FILE",
                         help="merge learned data from a JSON file")
 
+    fleet = sub.add_parser("fleet", help="controller for multiple Atlas agent instances")
+    fleet_sub = fleet.add_subparsers(dest="action", required=True)
+    fleet_sub.add_parser("list")
+    fleet_sub.add_parser("shared")
+    create_fleet = fleet_sub.add_parser("create")
+    create_fleet.add_argument("label")
+    create_fleet.add_argument("workspace")
+    create_fleet.add_argument("--provider", default="ollama")
+    create_fleet.add_argument("--model", default="")
+    for action in ("start", "stop", "remove"):
+        item = fleet_sub.add_parser(action)
+        item.add_argument("id")
+    goal_cmd = fleet_sub.add_parser("goal")
+    goal_cmd.add_argument("text", nargs="+")
+    goal_cmd.add_argument("--ids", nargs="*", default=None)
+
+    bridge = sub.add_parser("bridge", help="local model briefs a frontier model")
+    bridge.add_argument("text", nargs="+")
+    bridge.add_argument("--no-refine", action="store_true")
+
     sub.add_parser("workspace", help="show workspace and Git context")
 
     company = sub.add_parser("company", help="real, dated company research")
@@ -291,6 +311,38 @@ def main() -> int:
                 tools = ", ".join(str(step.get("tool")) for step in row["steps"])
                 print(f"  similar ({row['similarity']}): {row['goal']} -> {tools}")
             return 0
+
+        if args.group == "fleet":
+            import fleet
+            if args.action == "list":
+                for row in fleet.list_instances():
+                    print(f"{row['id']:12} {row['label'][:20]:20} {row['provider']:12} "
+                          f"port {row['port']} {row['status']}")
+                if not fleet.list_instances():
+                    print("no instances — create one with: atlas fleet create NAME PATH")
+                return 0
+            if args.action == "shared":
+                print(fleet.shared_drive())
+                print(fleet.sharetools.run({"action": "list", "path": "."}))
+                return 0
+            if args.action == "create":
+                row = fleet.create(args.label, args.workspace, args.provider, args.model)
+                print(json.dumps(row, indent=2))
+                return 0
+            if args.action in ("start", "stop", "remove"):
+                fn = getattr(fleet, args.action)
+                result = fn(args.id)
+                print(json.dumps(result, indent=2, default=str))
+                return 0
+            result = fleet.orchestrate(" ".join(args.text), args.ids)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0
+
+        if args.group == "bridge":
+            import bridge
+            result = bridge.run(" ".join(args.text), refine=not args.no_refine)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0 if result.get("ok") else 1
 
         if args.group == "company":
             result = research.company(" ".join(args.name), sources=args.sources)
