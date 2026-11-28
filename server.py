@@ -24,6 +24,7 @@ import errno
 import json
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -38,6 +39,7 @@ import activity
 import agent
 import artifacts
 import bridge
+import codebridge
 import fleet
 import freshness
 import fstools
@@ -629,6 +631,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"instances": fleet.list_instances(),
                                    "shared": str(fleet.shared_drive()),
                                    "providers": providers.list_presets()})
+            if path == "/api/changes":
+                try:
+                    root = fstools.workspace()
+                    git = subprocess.run(
+                        ["git", "-C", str(root), "status", "--short"],
+                        capture_output=True, text=True, timeout=5,
+                    ).stdout.strip().splitlines()[:40]
+                    recent = []
+                    cutoff = time.time() - 1800
+                    for item in root.iterdir():
+                        try:
+                            if item.is_file() and item.stat().st_mtime >= cutoff:
+                                recent.append(item.name)
+                        except OSError:
+                            continue
+                    drive_rows = sharetools.run({"action": "list", "path": "."})
+                    return self._json({
+                        "workspace": str(root), "git": git,
+                        "recent": recent[:15],
+                        "drive": drive_rows,
+                    })
+                except Exception as exc:
+                    return self._json({"error": str(exc)}, 500)
             if path == "/api/drive":
                 try:
                     listing = sharetools.run({"action": "list", "path": "."})
@@ -724,6 +749,22 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.browser_lease.close()
                 return self._json({"ok": True}, 202)
 
+            if path == "/api/drive/read":
+                try:
+                    text = sharetools.run({"action": "read", "path": body.get("path", ".")})
+                    return self._json({"path": body.get("path"), "text": text})
+                except Exception as exc:
+                    return self._json({"error": str(exc)}, 400)
+            if path == "/api/drive/write":
+                try:
+                    text = sharetools.run({
+                        "action": "write", "path": body.get("path", ""),
+                        "content": body.get("content", ""),
+                    })
+                    return self._json({"ok": True, "result": text})
+                except Exception as exc:
+                    return self._json({"error": str(exc)}, 400)
+
             if path == "/api/fleet":
                 action = body.get("action") or "list"
                 if action == "create":
@@ -751,6 +792,20 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/fleet/goal":
                 try:
                     return self._json(fleet.orchestrate(
+                        body.get("goal", ""), body.get("ids"),
+                    ))
+                except Exception as exc:
+                    return self._json({"error": str(exc)}, 400)
+
+            if path == "/api/codebridge":
+                return self._json(codebridge.run(
+                    body.get("request", ""), model=body.get("model"),
+                    execute=bool(body.get("execute", True)),
+                ))
+
+            if path == "/api/fleet/tournament":
+                try:
+                    return self._json(fleet.tournament(
                         body.get("goal", ""), body.get("ids"),
                     ))
                 except Exception as exc:

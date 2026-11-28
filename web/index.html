@@ -185,6 +185,11 @@
   <div id="usage-panel-body"></div>
 </div>
 
+<div id="change-bar" class="change-bar">
+  <span id="change-bar-text">Loading workspace changes…</span>
+  <button type="button" id="change-bar-open">Open drive</button>
+</div>
+
 <dialog id="configure">
   <div class="settings-shell">
     <aside class="settings-tabs">
@@ -251,7 +256,16 @@
         <div class="pull-row">
           <input id="harness-goal" placeholder="Goal for all running agents" spellcheck="false" />
           <button type="button" id="harness-run">Orchestrate</button>
+          <button type="button" id="harness-tournament">Tournament</button>
         </div>
+        <div class="field-label spaced">United drive</div>
+        <div id="harness-drive"></div>
+        <div class="pull-row">
+          <input id="drive-path" placeholder="notes.md" spellcheck="false" />
+          <input id="drive-content" placeholder="text to write" spellcheck="false" />
+          <button type="button" id="drive-write">Write</button>
+        </div>
+        <pre id="drive-view" class="tool-note"></pre>
         <p class="status-line" id="harness-status"></p>
         <pre id="harness-result" class="tool-note"></pre>
       </section>

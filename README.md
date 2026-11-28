@@ -371,6 +371,11 @@ For older platform notes see [SETUP-MAC.md](SETUP-MAC.md) and
 
 ---
 
+## Deployment
+
+See [docs/DEPLOY.md](docs/DEPLOY.md) for systemd/launchd, a united shared
+drive, reverse proxy + auth, and running several instances behind one server.
+
 ## Privacy & security
 
 `data/` and `notes/` are gitignored; Git history contains no `.env`, database,

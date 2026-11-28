@@ -1088,6 +1088,67 @@ function fsNote() {
   return fs?.workspace || fs?.error || "no workspace configured";
 }
 
+async function refreshChanges() {
+  try {
+    const d = await api("/api/changes");
+    const changes = (d.git || []).length;
+    const recent = (d.recent || []).length;
+    $("#change-bar-text").textContent =
+      `Workspace: ${changes} git change${changes === 1 ? "" : "s"} · ` +
+      `${recent} recent file${recent === 1 ? "" : "s"} · united drive ready`;
+  } catch (err) {
+    $("#change-bar-text").textContent = "Workspace status unavailable";
+  }
+}
+
+async function refreshDrive() {
+  const d = await api("/api/drive");
+  const names = (d.listing || "").split("\n").slice(1).filter(Boolean);
+  $("#harness-drive").innerHTML = names.length
+    ? names.map((name) => `<button type="button" class="text-btn" data-drive="${esc(name.trim().replace(/^(dir|file)\s+/, ""))}">${esc(name)}</button>`).join(" ")
+    : "<p class='status-line'>United drive is empty.</p>";
+  $("#harness-drive").querySelectorAll("button[data-drive]").forEach((button) => {
+    button.onclick = async () => {
+      const r = await api("/api/drive/read", {
+        method: "POST", body: JSON.stringify({ path: button.dataset.drive }),
+      });
+      $("#drive-view").textContent = r.error || r.text || "";
+    };
+  });
+}
+
+$("#change-bar-open").onclick = () => {
+  openSettings();
+  selectSettingsTab("harness");
+  refreshDrive();
+};
+
+$("#drive-write").onclick = async () => {
+  const r = await api("/api/drive/write", {
+    method: "POST",
+    body: JSON.stringify({ path: $("#drive-path").value,
+                           content: $("#drive-content").value }),
+  });
+  $("#drive-view").textContent = r.error || r.result || "";
+  if (r.ok) { refreshDrive(); refreshChanges(); }
+};
+
+$("#harness-tournament").onclick = async () => {
+  const status = $("#harness-status");
+  status.textContent = "Running tournament…";
+  try {
+    const r = await api("/api/fleet/tournament", {
+      method: "POST", body: JSON.stringify({ goal: $("#harness-goal").value }),
+    });
+    if (r.error) { status.textContent = r.error; return; }
+    $("#harness-result").textContent =
+      `Winner: ${r.winner || "none"}\n\n` +
+      (r.results || []).map((x) => `${x.label}: ${x.score} (${(x.notes || []).join(", ")})`).join("\n")
+      + `\n\nReceipt: ${r.receipt}`;
+    status.textContent = `completed in ${r.duration_s}s`;
+  } catch (err) { status.textContent = err.message; }
+};
+
 async function refreshFleet() {
   const data = await api("/api/fleet");
   $("#harness-shared").textContent = data.shared || "";
@@ -1167,7 +1228,7 @@ function selectSettingsTab(name) {
 document.querySelectorAll(".settings-tabs button").forEach((button) => {
   button.onclick = () => {
     selectSettingsTab(button.dataset.tab);
-    if (button.dataset.tab === "harness") refreshFleet();
+    if (button.dataset.tab === "harness") { refreshFleet(); refreshDrive(); }
     if (button.dataset.tab === "tools") {
       $("#settings-tools").innerHTML = state.tools.map((row) =>
         `<span class="${row.available ? "on" : ""}">${esc(row.id)} · ${esc(row.permission)}</span>`
@@ -1491,6 +1552,8 @@ document.addEventListener("keydown", (e) => {
 /* ----------------------------------------------------------------- boot */
 
 (async function boot() {
+  refreshChanges();
+  setInterval(refreshChanges, 30000);
   startLease();
 
   selects.theme = makeSelect($("#theme-select"), {

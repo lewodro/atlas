@@ -23,6 +23,7 @@ import config
 import examples
 import feedback
 import llm
+import skillforge
 import registry
 import toolpolicy
 
@@ -386,7 +387,8 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
             satisfied, note = goal_satisfied(goal, tools)
             answer = deterministic_report(tools)
             try:
-                feedback.finish(goal, tools, answer, note, tier, model)
+                quality = feedback.finish(goal, tools, answer, note, tier, model)
+                skillforge.forge(goal, tools, quality)
             except Exception:
                 pass
             emit({"text": goal, "status": "done" if satisfied else "incomplete",
@@ -525,7 +527,9 @@ def run(goal: str, tier: str = "local", *, model: str | None = None,
         if done and tools:
             examples.save(goal, tools, 1.0)
         try:
-            feedback.finish(goal, tools, answer, _observations(tools), tier, model)
+            quality = feedback.finish(goal, tools, answer, _observations(tools),
+                                      tier, model)
+            skillforge.forge(goal, tools, quality)
         except Exception:
             pass
         emit({"text": goal, "status": "done" if done else "incomplete", "step": reason})

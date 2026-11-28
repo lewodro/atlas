@@ -67,6 +67,9 @@ def main() -> int:
     skill = sub.add_parser("skills", help="installed instruction skills")
     skill_sub = skill.add_subparsers(dest="action", required=True)
     skill_sub.add_parser("list")
+    skill_sub.add_parser("forged")
+    forge_install = skill_sub.add_parser("forged-install")
+    forge_install.add_argument("id")
     show = skill_sub.add_parser("show")
     show.add_argument("id")
     enable = skill_sub.add_parser("enable")
@@ -138,6 +141,14 @@ def main() -> int:
     goal_cmd = fleet_sub.add_parser("goal")
     goal_cmd.add_argument("text", nargs="+")
     goal_cmd.add_argument("--ids", nargs="*", default=None)
+    tourney = fleet_sub.add_parser("tournament")
+    tourney.add_argument("text", nargs="+")
+    tourney.add_argument("--ids", nargs="*", default=None)
+
+    codebridge = sub.add_parser("codebridge",
+                                help="local briefs frontier, frontier writes code")
+    codebridge.add_argument("text", nargs="+")
+    codebridge.add_argument("--no-run", action="store_true")
 
     bridge = sub.add_parser("bridge", help="local model briefs a frontier model")
     bridge.add_argument("text", nargs="+")
@@ -220,6 +231,23 @@ def main() -> int:
             return 0
 
         if args.group == "skills":
+            if args.action == "forged":
+                import skillforge
+                for row in skillforge.list_forged():
+                    state = "installed" if row["installed"] else "local"
+                    print(f"{row['id']:20} {row['score']:.2f} {state:10} {row['name'][:60]}")
+                if not skillforge.list_forged():
+                    print("no forged skills yet — complete a verified goal first")
+                return 0
+            if args.action == "forged-install":
+                import skillforge
+                try:
+                    target = skillforge.install(args.id)
+                    print("installed", target)
+                    return 0
+                except Exception as exc:
+                    print("error:", exc, file=sys.stderr)
+                    return 1
             if args.action == "list":
                 for item in skills.list_skills():
                     mark = "+" if item["enabled"] else "-"
@@ -334,9 +362,19 @@ def main() -> int:
                 result = fn(args.id)
                 print(json.dumps(result, indent=2, default=str))
                 return 0
+            if args.action == "tournament":
+                result = fleet.tournament(" ".join(args.text), args.ids)
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+                return 0
             result = fleet.orchestrate(" ".join(args.text), args.ids)
             print(json.dumps(result, indent=2, ensure_ascii=False))
             return 0
+
+        if args.group == "codebridge":
+            import codebridge
+            result = codebridge.run(" ".join(args.text), execute=not args.no_run)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0 if result.get("ok") else 1
 
         if args.group == "bridge":
             import bridge

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -277,3 +278,68 @@ def orchestrate(goal: str, instance_ids: list[str] | None = None) -> dict:
     return {"goal": goal, "agents": results, "synthesis": synthesis,
             "duration_s": round(time.time() - started, 1),
             "shared": str(shared_drive())}
+
+
+def score_answer(goal: str, answer: str, ok: bool) -> tuple[int, list[str]]:
+    """Deterministic, explainable grading of an agent's report."""
+    text = str(answer or "")
+    score, notes = 0, []
+    if ok:
+        score += 3
+        notes.append("tool run succeeded")
+    else:
+        score -= 4
+        notes.append("agent failed")
+    if any(marker in text.lower() for marker in ("no answer", "could not establish",
+                                                  "tool error", "(no answer)")):
+        score -= 4
+        notes.append("no grounded answer")
+    for marker in re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", str(goal or "")):
+        if marker in text:
+            score += 3
+            notes.append(f"observed {marker}")
+    if "http" in text:
+        score += 2
+        notes.append("cites a URL")
+    if len(text) >= 80:
+        score += 1
+    if re.search(r"(?:^|\n)\s*[-*\d]+[.)]?\s", text):
+        score += 1
+        notes.append("structured report")
+    return score, notes
+
+
+def tournament(goal: str, instance_ids: list[str] | None = None) -> dict:
+    """Run the same goal on several agents and pick a verified winner."""
+    goal = str(goal or "").strip()
+    if not goal:
+        raise ValueError("goal is empty")
+    rows = list_instances()
+    if instance_ids is not None:
+        rows = [row for row in rows if row["id"] in instance_ids]
+    active = [row for row in rows if row.get("status") == "running"]
+    started = time.time()
+    with ThreadPoolExecutor(max_workers=max(1, len(active))) as pool:
+        results = list(pool.map(lambda row: send_goal(row["id"], goal), active))
+    scored = []
+    for item in results:
+        value, notes = score_answer(goal, item.get("answer", ""), bool(item.get("ok")))
+        scored.append({**item, "score": value, "notes": notes})
+    scored.sort(key=lambda row: -row["score"])
+    winner = scored[0] if scored else None
+    receipt = (
+        f"# Tournament winner\n\nGoal: {goal}\n\n"
+        + (f"Agent: {winner['label']} (score {winner['score']})\n\n"
+           f"{winner.get('answer', '')}\n" if winner else "No running agents.\n")
+    )
+    try:
+        sharetools.run({"action": "write", "path": "WINNER.md", "content": receipt})
+        sharetools.run({"action": "handoff",
+                        "note": f"Tournament winner: {winner['label'] if winner else 'none'}"})
+    except Exception:
+        pass
+    return {"goal": goal, "results": scored,
+            "winner": winner["label"] if winner else None,
+            "winner_id": winner["id"] if winner else None,
+            "duration_s": round(time.time() - started, 1),
+            "receipt": "WINNER.md"}

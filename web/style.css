@@ -951,3 +951,21 @@ dialog#configure { width: min(760px, 94vw); }
 @media (prefers-reduced-motion: reduce) {
   .intro.play, .intro.play .intro-mark { animation-duration: .1s; }
 }
+
+/* Change bar: a quiet, always-visible status strip for workspace + drive. */
+.change-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--line, #223);
+  background: var(--bg, #0a0c10);
+  color: var(--muted, #8a97a8);
+  font-size: 12px;
+  z-index: 30;
+}
+.change-bar button { background: none; border: 1px solid var(--line, #223); color: inherit; border-radius: 4px; padding: 2px 8px; cursor: pointer; }
+.change-bar button:hover { color: var(--accent, #4dd); }
+.runtime-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.runtime-row small { opacity: .7; }
